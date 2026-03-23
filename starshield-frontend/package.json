@@ -1,0 +1,21 @@
+{
+  "name": "starshield-frontend",
+  "version": "1.0.0",
+  "description": "星盾舆情监控中台 - 前端工程",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "element-plus": "^2.7.2",
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.6.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.2.0"
+  }
+}

@@ -1,0 +1,65 @@
+server:
+  port: 8080
+  # 高并发场景下适当调大 Tomcat 线程池
+  tomcat:
+    threads:
+      max: 400
+      min-spare: 50
+    accept-count: 200
+
+spring:
+  application:
+    name: starshield-backend
+
+  # ===================== 数据源配置 =====================
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 请将 YOUR_PASSWORD 替换为你本地 MySQL 的真实密码
+    url: jdbc:mysql://localhost:3306/starshield?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: root
+    password: YOUR_PASSWORD
+    hikari:
+      # 连接池最大连接数，根据 DB 压力调整
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # ===================== RabbitMQ 配置 =====================
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    virtual-host: /
+    # 消息序列化：使用 JSON
+    listener:
+      simple:
+        # 消费者并发数量，提升消费吞吐
+        concurrency: 5
+        max-concurrency: 20
+        # 每次预取的消息数量
+        prefetch: 10
+        # 手动确认，防止消息丢失
+        acknowledge-mode: manual
+
+# ===================== MyBatis-Plus 配置 =====================
+mybatis-plus:
+  configuration:
+    # 开启驼峰映射
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 全局主键策略：雪花算法
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# ===================== 日志配置 =====================
+logging:
+  level:
+    com.starshield: debug
+    org.springframework.amqp: info
