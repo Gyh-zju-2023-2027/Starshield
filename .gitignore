@@ -1,0 +1,65 @@
+# ===========================
+# Maven / Spring Boot 后端
+# ===========================
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# Maven wrapper
+.mvn/
+
+# IDE 生成文件
+*.iml
+.idea/
+*.iws
+*.ipr
+
+# Spring Boot 日志 & 临时文件
+*.log
+spring.log
+logs/
+
+# 本地配置覆盖（含数据库密码等敏感信息）
+application-local.yml
+application-local.properties
+
+# ===========================
+# Node.js / Vue / Vite 前端
+# ===========================
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Vite 缓存
+.vite/
+
+# npm / yarn / pnpm 日志
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===========================
+# 系统 & 编辑器
+# ===========================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# VS Code / Cursor
+.vscode/
+.cursor/
+
+# ===========================
+# 环境变量（含敏感信息）
+# ===========================
+.env
+.env.local
+.env.*.local

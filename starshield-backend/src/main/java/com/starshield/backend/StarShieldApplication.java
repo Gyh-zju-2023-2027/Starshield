@@ -1,5 +1,6 @@
 package com.starshield.backend;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -8,6 +9,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 海量游戏玩家发言舆情与违规智能监控系统
  */
 @SpringBootApplication
+@MapperScan("com.starshield.backend.mapper")
 public class StarShieldApplication {
 
     public static void main(String[] args) {
