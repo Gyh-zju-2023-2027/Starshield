@@ -1,0 +1,21 @@
+# 星盾 (StarShield) 全局 AI 开发准则
+
+## 1. 核心技术栈 (Technology Stack)
+- Backend: Java 17, Spring Boot 3.3+, MyBatis-Plus
+- Middleware: RabbitMQ (必选削峰), Redis (布隆过滤器), Elasticsearch 8.x
+- Frontend: Vue 3 (Setup), Element Plus, ECharts, Tailwind CSS
+- AI: DeepSeek-V3 / Qwen-Max API 接入
+
+## 2. 架构红线 (Architectural Constraints)
+- 【流量降级】：海量发言日志严禁直接写库，必须经过 `Producer -> RabbitMQ -> Consumer -> ES/DB` 链路。
+- 【缓存优先】：所有频繁变动的黑名单/配置必须存储在 Redis，使用布隆过滤器防止穿透。
+- 【接口契约】：所有修改必须参考 `docs/api-spec.yaml`，严禁擅自修改已约定的字段名。
+
+## 3. 协作协议 (Workflow Protocol)
+- 【日志强制】：每次完成功能代码生成后，必须主动更新 `.ai-logs/[角色名]/` 下的记录文件。
+- 【代码质量】：方法注释必须包含 `@author AI (under [Role_ID] supervision)`。
+- 【上下文感知】：写代码前优先读取 `.airules` 和 `aiskills/` 对应的角色描述。
+
+## 4. 文件操作规范
+- 修改现有文件前，必须先执行 `read_file` 确认逻辑。
+- 严禁删除未被要求修改的现有注释或版权声明。

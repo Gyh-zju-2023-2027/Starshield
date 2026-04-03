@@ -1,0 +1,150 @@
+openapi: 3.0.3
+info:
+  title: StarShield API
+  description: |
+    星盾（StarShield）海量游戏玩家发言舆情与违规智能监控中台 API 契约文档。
+    
+    约束：所有接口变更必须先更新本文件，再修改代码。
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8080
+    description: 本地开发环境
+
+tags:
+  - name: Chat
+    description: 玩家发言接收接口
+
+paths:
+  /api/chat/upload:
+    post:
+      tags:
+        - Chat
+      summary: 上传玩家发言（高并发入口）
+      description: |
+        接收前端发言数据后，仅执行「序列化并投递到 RabbitMQ」，
+        不直接写数据库，立即返回成功，满足削峰填谷架构要求。
+      operationId: uploadChatMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageUploadRequest'
+            examples:
+              normal:
+                summary: 正常发言示例
+                value:
+                  playerId: "P1234567"
+                  content: "这把操作太猛了！"
+                  platform: "GAME_INNER"
+                  status: 0
+      responses:
+        '200':
+          description: 接收成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+              examples:
+                success:
+                  summary: 标准成功响应
+                  value:
+                    code: 200
+                    message: "接收成功"
+                    data: null
+        '500':
+          description: 接收失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultVoid'
+              examples:
+                failed:
+                  summary: 标准失败响应
+                  value:
+                    code: 500
+                    message: "消息接收失败，请稍后重试"
+                    data: null
+
+components:
+  schemas:
+    ResultVoid:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: 状态码，200 表示成功
+          example: 200
+        message:
+          type: string
+          description: 响应消息
+          example: "接收成功"
+        data:
+          nullable: true
+          description: 业务数据；本接口返回 null
+
+    ChatMessageUploadRequest:
+      type: object
+      required:
+        - playerId
+        - content
+        - platform
+      properties:
+        playerId:
+          type: string
+          description: 玩家 ID
+          maxLength: 64
+          example: "P1234567"
+        content:
+          type: string
+          description: 玩家发言内容
+          maxLength: 10000
+          example: "兄弟们这把冲分！"
+        platform:
+          type: string
+          description: 数据来源平台
+          example: "GAME_INNER"
+          enum:
+            - GAME_INNER
+            - BILIBILI
+            - WEIBO
+            - DOUYIN
+            - OTHER
+        status:
+          type: integer
+          format: int32
+          description: |
+            状态枚举：
+            - 0: 待处理（推荐上传时传 0）
+            - 1: 正常
+            - 2: 违规
+          default: 0
+          enum: [0, 1, 2]
+          example: 0
+        aiAnalysisResult:
+          type: string
+          nullable: true
+          description: AI 分析结果 JSON 字符串，上传时可不传
+          example: "{\"label\":\"正常\",\"confidence\":0.98}"
+        createTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: 创建时间，上传时通常由后端自动填充
+          example: "2026-03-31T10:20:30"
+
+x-contract-rules:
+  immutable_fields:
+    - playerId
+    - content
+    - platform
+    - status
+    - aiAnalysisResult
+    - createTime
+  note: |
+    已约定字段名为契约字段，禁止随意重命名（例如 playerId 不能改为 player_id）。
