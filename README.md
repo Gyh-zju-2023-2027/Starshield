@@ -204,11 +204,10 @@ CREATE TABLE chat_message_log (
 ## 后续规划（Phase 2）
 
 - [ ] 接入真实 AI 大模型（GPT-4o / 通义千问）进行违规检测
-- [ ] 管理后台：违规记录列表、一键封禁、数据看板
-- [ ] 引入 Redis 缓存热点玩家黑名单，前置过滤
-- [ ] 接入 Elasticsearch 实现全文检索和趋势分析
-- [ ] 支持 Kubernetes 水平扩容部署
+- [ ] 完成 Elasticsearch 原生 DSL 检索（替换当前 ES 快速路径）
+- [ ] 增加审计日志检索页与操作统计看板
 - [ ] 接入 Prometheus + Grafana 监控 QPS / 消费延迟
+- [ ] 支持 Kubernetes 水平扩容部署
 
 ---
 

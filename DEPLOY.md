@@ -318,6 +318,37 @@ mysql -u root -p < starshield-backend/src/main/resources/init.sql
 
 ---
 
+## 8. 联调启动顺序（2026-04 版本）
+
+建议严格按以下顺序启动：
+
+1. 启动 MySQL（确认 `starshield` 库存在）
+2. 启动 RabbitMQ（确认 `5672` 可连通）
+3. 启动 Redis（确认 `6379` 可连通）
+4. （可选）启动 Elasticsearch（确认 `9200` 可连通）
+5. 启动后端 `starshield-backend`
+6. 启动前端 `starshield-frontend`
+
+### 联调检查清单
+
+- 接入与削峰：
+  - 调 `POST /api/chat/upload` 返回 `200`
+  - 高频请求可触发 `429`
+- 审核链路：
+  - 消费后 `chat_message_log` 包含 `decision/risk_score/labels/hit_words`
+- 控制台：
+  - `GET/PUT /api/control/rules/sensitive-words` 可读写
+  - `GET/PUT /api/control/prompt` 可读写
+- 审核后台：
+  - `GET /api/admin/moderation/pending` 有返回
+  - `POST /confirm-ban`、`/release` 需带 `X-Idempotency-Key`
+  - `GET /api/admin/moderation/{id}/audit-logs` 可看到操作时间线
+- 大屏：
+  - `GET /api/dashboard/metrics` 正常
+  - WebSocket `/ws/dashboard` 可收到推送
+- 检索：
+  - `GET /api/archive/search?page=1&limit=50` 正常
+
 ### Q5：npm install 报权限错误 `EPERM`
 
 **原因**：npm 缓存目录被 root 账户锁定。

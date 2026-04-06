@@ -52,6 +52,26 @@ public class ChatMessageLog implements Serializable {
     private Integer status;
 
     /**
+     * 审核决策：PASS / REVIEW / BLOCK
+     */
+    private String decision;
+
+    /**
+     * 风险分（0-100）
+     */
+    private Integer riskScore;
+
+    /**
+     * 标签（逗号分隔）
+     */
+    private String labels;
+
+    /**
+     * 命中词（逗号分隔）
+     */
+    private String hitWords;
+
+    /**
      * AI 大模型分析结果（JSON 字符串格式）
      * 例如：{"label":"正常","confidence":0.98,"reason":"无违禁词"}
      * 初始为空，待 AI 模块异步填充
