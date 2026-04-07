@@ -3,6 +3,9 @@
 - **角色**：P5_Admin_API
 - **主题**：审核链路可追溯与幂等增强
 
+## 1. 核心提示词 (Prompt)
+"请为人工操作增加审计落库（before/after 决策与风险分）、提供幂等键签发与消费（`X-Idempotency-Key`、409 冲突）、并新增 moderation_audit_log 表定义。"
+
 ## 本次新增
 1. 新增审计实体与服务：
    - `ModerationAuditLog`

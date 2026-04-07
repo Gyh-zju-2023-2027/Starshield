@@ -3,6 +3,9 @@
 - **角色**：P9_Dashboard_FE
 - **任务**：全服舆情实时大屏（基础版）
 
+## 1. 核心提示词 (Prompt)
+"请实现大屏后端指标接口与 WebSocket 定时广播、前端 KPI 卡片与 ECharts 趋势和消息流，并在 Vite 代理中转发 `/ws` 以便本地联调。"
+
 ## 已完成
 1. 新增后端指标接口：`GET /api/dashboard/metrics`。
 2. 新增 WebSocket 推送链路：

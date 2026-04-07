@@ -3,6 +3,9 @@
 - **角色**：P2_DevOps
 - **主题**：幂等键从内存迁移至 Redis
 
+## 1. 核心提示词 (Prompt)
+"请实现基于 Redis 的幂等服务（生成与单次消费幂等键、TTL 5 分钟），并替换管理端控制器中的内存 ConcurrentHashMap，使多实例部署下幂等状态一致且重启不丢。"
+
 ## 本次新增
 1. 新增 `IdempotencyService`，基于 Redis 管理幂等键：
    - 生成 key：`createKey()`

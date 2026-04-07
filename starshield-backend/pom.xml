@@ -67,18 +67,11 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- MyBatis-Plus -->
+        <!-- MyBatis-Plus Spring Boot 3：正确注册 SqlSessionFactory，BaseMapper#selectCount 等才可用 -->
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus</artifactId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>${mybatis-plus.version}</version>
-        </dependency>
-        
-        <!-- MyBatis Spring Boot Starter -->
-        <dependency>
-            <groupId>org.mybatis.spring.boot</groupId>
-            <artifactId>mybatis-spring-boot-starter</artifactId>
-            <version>3.0.3</version>
         </dependency>
 
         <!-- Lombok (简化实体类代码) -->

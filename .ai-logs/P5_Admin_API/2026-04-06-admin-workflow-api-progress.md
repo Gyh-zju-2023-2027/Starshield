@@ -3,6 +3,9 @@
 - **角色**：P5_Admin_API
 - **任务**：智能封禁与人工复核工作流 API
 
+## 1. 核心提示词 (Prompt)
+"请实现管理端审核 API：待复核列表、确认封禁、解除封禁，并在服务层按风险分排序、联动 decision/status/riskScore/labels，为后续审计与幂等预留扩展点。"
+
 ## 已完成
 1. 新增审核后台接口：
    - `GET /api/admin/moderation/pending`

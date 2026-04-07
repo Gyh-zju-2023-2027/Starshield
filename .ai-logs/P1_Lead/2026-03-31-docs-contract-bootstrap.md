@@ -4,6 +4,9 @@
 - **角色**：P1_Lead
 - **任务**：补齐接口契约与协作文档体系
 
+## 1. 核心提示词 (Prompt)
+"请为项目补齐 OpenAPI 契约与协作文档体系（`api-spec.yaml`、接口变更日志、字段字典、错误码、事件规范），并固化 `POST /api/chat/upload` 契约；后续字段变更必须先更新文档再改代码。"
+
 ## 本次新增
 1. `docs/api-spec.yaml`
 2. `docs/api-change-log.md`

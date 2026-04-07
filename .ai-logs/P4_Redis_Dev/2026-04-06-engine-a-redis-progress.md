@@ -3,6 +3,9 @@
 - **角色**：P4_Redis_Dev
 - **任务**：引擎 A（Redis 敏感词快速拦截）落地
 
+## 1. 核心提示词 (Prompt)
+"请实现基于 Redis 敏感词表的 RuleEngineService：本地短缓存、文本归一化匹配、输出 FastCheckResult 三态与命中信息，并在消费者中优先拦截高风险以减少引擎 B 压力。"
+
 ## 已完成
 1. 新增 `RuleEngineService`：
    - 读取 Redis `starshield:rules:sensitive_words`

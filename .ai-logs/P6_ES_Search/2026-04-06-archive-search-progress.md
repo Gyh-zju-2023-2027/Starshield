@@ -3,6 +3,9 @@
 - **角色**：P6_ES_Search
 - **任务**：百万级发言检索中台（MySQL 检索 + ES 双写骨架）
 
+## 1. 核心提示词 (Prompt)
+"请实现归档检索 API（多条件过滤）、ES 索引模型与 Repository、以及在消费落库后的双写同步服务（可配置开关），读路径可先走 MySQL 保证快速可用。"
+
 ## 已完成
 1. 新增检索 API：
    - `GET /api/archive/search`

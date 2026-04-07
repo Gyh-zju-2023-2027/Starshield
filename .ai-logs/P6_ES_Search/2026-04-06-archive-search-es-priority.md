@@ -3,6 +3,9 @@
 - **角色**：P6_ES_Search
 - **主题**：检索链路 ES 优先化 + 分页能力
 
+## 1. 核心提示词 (Prompt)
+"请实现 ArchiveSearchService：在 `es-enabled=true` 时优先查 ES、否则兜底 MySQL；控制器增加 page/limit 分页并更新 api-change-log 与 field-dictionary。"
+
 ## 本次新增
 1. 新增 `ArchiveSearchService`，实现“ES 优先、MySQL 兜底”策略：
    - `starshield.archive.es-enabled=true` 时优先走 ES

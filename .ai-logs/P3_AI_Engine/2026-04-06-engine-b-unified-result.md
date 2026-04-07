@@ -3,6 +3,9 @@
 - **角色**：P3_AI_Engine
 - **任务**：引擎 B（深度语义）从占位实现升级为统一结果模型
 
+## 1. 核心提示词 (Prompt)
+"请为引擎 B 定义统一的 AiModerationResult（风险分、标签、三态决策、置信度、理由、provider、promptVersion），重写 AiAnalysisService 支持可配置 provider，并在消费者中与引擎 A 做融合判定（高风险优先、决策合并）。"
+
 ## 已完成
 1. 新增 `AiModerationResult` 模型，统一字段：
    - `riskScore`
