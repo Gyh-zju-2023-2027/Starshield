@@ -3,6 +3,7 @@ package com.starshield.backend.service;
 import com.starshield.backend.archive.ChatMessageIndex;
 import com.starshield.backend.archive.ChatMessageIndexRepository;
 import com.starshield.backend.entity.ChatMessageLog;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -17,7 +18,7 @@ public class ArchiveSyncService {
     @Value("${starshield.archive.es-enabled:false}")
     private boolean esEnabled;
 
-    public ArchiveSyncService(ChatMessageIndexRepository indexRepository) {
+    public ArchiveSyncService(@Autowired(required = false) ChatMessageIndexRepository indexRepository) {
         this.indexRepository = indexRepository;
     }
 
@@ -27,7 +28,7 @@ public class ArchiveSyncService {
      * @author AI (under P6 supervision)
      */
     public void syncToEs(ChatMessageLog log) {
-        if (!esEnabled || log == null || log.getId() == null) {
+        if (!esEnabled || indexRepository == null || log == null || log.getId() == null) {
             return;
         }
 

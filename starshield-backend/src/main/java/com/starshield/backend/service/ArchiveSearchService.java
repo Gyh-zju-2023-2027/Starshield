@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.starshield.backend.archive.ChatMessageIndex;
 import com.starshield.backend.archive.ChatMessageIndexRepository;
 import com.starshield.backend.entity.ChatMessageLog;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -26,7 +27,7 @@ public class ArchiveSearchService {
     private boolean esEnabled;
 
     public ArchiveSearchService(ChatMessageService chatMessageService,
-                                ChatMessageIndexRepository chatMessageIndexRepository) {
+                                @Autowired(required = false) ChatMessageIndexRepository chatMessageIndexRepository) {
         this.chatMessageService = chatMessageService;
         this.chatMessageIndexRepository = chatMessageIndexRepository;
     }
@@ -47,7 +48,7 @@ public class ArchiveSearchService {
         int pageNo = Math.max(1, page == null ? 1 : page);
         int pageSize = Math.max(1, Math.min(1000, limit == null ? 200 : limit));
 
-        if (esEnabled) {
+        if (esEnabled && chatMessageIndexRepository != null) {
             return searchFromEs(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
         }
         return searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);

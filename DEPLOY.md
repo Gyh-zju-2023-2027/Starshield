@@ -156,6 +156,9 @@ spring:
 
 ### 4.2 编译并启动
 
+> 项目已启用 Maven Toolchains 并默认读取 `starshield-backend/.mvn/toolchains.xml`。
+> 首次克隆后请先检查该文件中的 `<jdkHome>` 是否指向你本机的 JDK 17 路径。
+
 ```bash
 cd starshield-backend
 
@@ -267,6 +270,33 @@ GROUP BY platform;
 ---
 
 ## 7. 常见问题
+
+### Q1：`TypeTag :: UNKNOWN` 编译失败
+
+原因：Maven 实际使用了 JDK 17 以外的版本（如 21/25），与 Lombok/编译器组合不兼容。
+
+处理：项目已启用 Maven Toolchains，确认 `starshield-backend/.mvn/toolchains.xml` 中 `jdkHome` 指向本机 JDK 17。
+
+### Q2：启动时报 `Connection refused` 且堆栈里有 `SimpleElasticsearchRepository`
+
+原因：本地未启动 Elasticsearch，但 Spring 在启动阶段初始化了 ES 仓储。
+
+处理：默认已在 `application.yml` 中关闭 ES 仓储自动初始化：
+
+```yaml
+spring:
+  data:
+    elasticsearch:
+      repositories:
+        enabled: false
+```
+
+若你需要启用 ES 归档：
+
+1. 启动 Elasticsearch（默认 `http://localhost:9200`）
+2. 把上面配置改为 `enabled: true`
+3. 同时将 `starshield.archive.es-enabled` 改为 `true`
+
 
 ### Q1：后端启动报错 `Access denied for user 'root'@'localhost'`
 

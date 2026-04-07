@@ -169,6 +169,7 @@ for (let i = 0; i < total; i += batchSize) {
 mysql -u root -p < starshield-backend/src/main/resources/init.sql
 
 # 2. 启动后端（修改 application.yml 中的数据库密码后）
+#    首次克隆请检查 starshield-backend/.mvn/toolchains.xml 里的 jdkHome 是否为你本机 JDK17
 cd starshield-backend && mvn spring-boot:run
 
 # 3. 启动前端

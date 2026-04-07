@@ -54,6 +54,12 @@ spring:
   elasticsearch:
     uris: http://localhost:9200
 
+  data:
+    elasticsearch:
+      repositories:
+        # 本地未启动 ES 时关闭仓储初始化，避免启动失败
+        enabled: false
+
 # ===================== 星盾业务参数 =====================
 starshield:
   archive:
