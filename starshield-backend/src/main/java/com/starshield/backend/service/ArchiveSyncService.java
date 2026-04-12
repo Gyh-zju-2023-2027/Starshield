@@ -1,11 +1,16 @@
 package com.starshield.backend.service;
 
-import com.starshield.backend.archive.ChatMessageIndex;
-import com.starshield.backend.archive.ChatMessageIndexRepository;
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.starshield.backend.entity.ChatMessageLog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 检索归档服务（双写至 ES）。
@@ -13,13 +18,17 @@ import org.springframework.stereotype.Service;
 @Service
 public class ArchiveSyncService {
 
-    private final ChatMessageIndexRepository indexRepository;
+    private static final Logger log = LoggerFactory.getLogger(ArchiveSyncService.class);
+    private static final String ARCHIVE_INDEX = "chat_message_archive";
+    private static final DateTimeFormatter ES_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
+
+    private final ElasticsearchClient elasticsearchClient;
 
     @Value("${starshield.archive.es-enabled:false}")
     private boolean esEnabled;
 
-    public ArchiveSyncService(@Autowired(required = false) ChatMessageIndexRepository indexRepository) {
-        this.indexRepository = indexRepository;
+    public ArchiveSyncService(@Autowired(required = false) ElasticsearchClient elasticsearchClient) {
+        this.elasticsearchClient = elasticsearchClient;
     }
 
     /**
@@ -27,21 +36,28 @@ public class ArchiveSyncService {
      *
      * @author AI (under P6 supervision)
      */
-    public void syncToEs(ChatMessageLog log) {
-        if (!esEnabled || indexRepository == null || log == null || log.getId() == null) {
+    public void syncToEs(ChatMessageLog chatMessageLog) {
+        if (!esEnabled || elasticsearchClient == null || chatMessageLog == null || chatMessageLog.getId() == null) {
             return;
         }
 
-        ChatMessageIndex index = new ChatMessageIndex()
-                .setId(String.valueOf(log.getId()))
-                .setPlayerId(log.getPlayerId())
-                .setContent(log.getContent())
-                .setPlatform(log.getPlatform())
-                .setDecision(log.getDecision())
-                .setRiskScore(log.getRiskScore())
-                .setLabels(log.getLabels())
-                .setCreateTime(log.getCreateTime());
+        try {
+            Map<String, Object> document = new HashMap<>();
+            document.put("id", String.valueOf(chatMessageLog.getId()));
+            document.put("player_id", chatMessageLog.getPlayerId());
+            document.put("content", chatMessageLog.getContent());
+            document.put("platform", chatMessageLog.getPlatform());
+            document.put("decision", chatMessageLog.getDecision());
+            document.put("risk_score", chatMessageLog.getRiskScore());
+            document.put("labels", chatMessageLog.getLabels());
+            document.put("create_time", chatMessageLog.getCreateTime() == null ? null : chatMessageLog.getCreateTime().format(ES_DATE_TIME_FORMATTER));
 
-        indexRepository.save(index);
+            elasticsearchClient.index(request -> request
+                    .index(ARCHIVE_INDEX)
+                    .id(String.valueOf(chatMessageLog.getId()))
+                    .document(document));
+        } catch (Exception e) {
+            log.warn("[ArchiveSync] ES sync skipped due to indexing error. messageId={}", chatMessageLog.getId(), e);
+        }
     }
 }

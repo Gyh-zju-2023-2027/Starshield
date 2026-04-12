@@ -1,16 +1,26 @@
 package com.starshield.backend.service;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
+import co.elastic.clients.elasticsearch.core.SearchRequest;
+import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.json.JsonData;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.starshield.backend.archive.ChatMessageIndex;
-import com.starshield.backend.archive.ChatMessageIndexRepository;
 import com.starshield.backend.entity.ChatMessageLog;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,16 +30,22 @@ import java.util.stream.Collectors;
 @Service
 public class ArchiveSearchService {
 
+    private static final Logger log = LoggerFactory.getLogger(ArchiveSearchService.class);
+    private static final String ARCHIVE_INDEX = "chat_message_archive";
+    private static final String ARCHIVE_ID_SORT_FIELD = "id.keyword";
+    private static final DateTimeFormatter ES_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS");
+    private static final DateTimeFormatter MYSQL_DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private final ChatMessageService chatMessageService;
-    private final ChatMessageIndexRepository chatMessageIndexRepository;
+    private final ElasticsearchClient elasticsearchClient;
 
     @Value("${starshield.archive.es-enabled:false}")
     private boolean esEnabled;
 
     public ArchiveSearchService(ChatMessageService chatMessageService,
-                                @Autowired(required = false) ChatMessageIndexRepository chatMessageIndexRepository) {
+                                @Autowired(required = false) ElasticsearchClient elasticsearchClient) {
         this.chatMessageService = chatMessageService;
-        this.chatMessageIndexRepository = chatMessageIndexRepository;
+        this.elasticsearchClient = elasticsearchClient;
     }
 
     /**
@@ -48,10 +64,20 @@ public class ArchiveSearchService {
         int pageNo = Math.max(1, page == null ? 1 : page);
         int pageSize = Math.max(1, Math.min(1000, limit == null ? 200 : limit));
 
-        if (esEnabled && chatMessageIndexRepository != null) {
-            return searchFromEs(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
+        if (esEnabled && elasticsearchClient != null) {
+            try {
+                List<ChatMessageLog> results = searchFromEs(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
+                log.info("[ArchiveSearch] path=ES page={} limit={} keyword={} playerId={} hits={}",
+                        pageNo, pageSize, keyword, playerId, results.size());
+                return results;
+            } catch (Exception e) {
+                log.warn("[ArchiveSearch] ES query failed, fallback to MySQL. page={}, limit={}", pageNo, pageSize, e);
+            }
         }
-        return searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
+        List<ChatMessageLog> results = searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
+        log.info("[ArchiveSearch] path=MYSQL page={} limit={} keyword={} playerId={} hits={}",
+                pageNo, pageSize, keyword, playerId, results.size());
+        return results;
     }
 
     private List<ChatMessageLog> searchFromEs(String keyword,
@@ -61,21 +87,44 @@ public class ArchiveSearchService {
                                               LocalDateTime startTime,
                                               LocalDateTime endTime,
                                               int page,
-                                              int size) {
-        int fetchSize = Math.min(5000, size * 5);
-        List<ChatMessageIndex> indices = chatMessageIndexRepository
-                .findAll(PageRequest.of(Math.max(page - 1, 0), fetchSize, Sort.by(Sort.Direction.DESC, "createTime")))
-                .getContent();
+                                              int size) throws IOException {
+        Query query = buildEsQuery(keyword, playerId, decision, labels, startTime, endTime);
+        List<FieldValue> searchAfter = null;
+        SearchResponse<JsonNode> response = null;
 
-        return indices.stream()
-                .filter(x -> containsIgnoreCase(x.getContent(), keyword))
-                .filter(x -> equalsIfPresent(x.getPlayerId(), playerId))
-                .filter(x -> equalsIfPresent(x.getDecision(), decision))
-                .filter(x -> containsIgnoreCase(x.getLabels(), labels))
-                .filter(x -> geIfPresent(x.getCreateTime(), startTime))
-                .filter(x -> leIfPresent(x.getCreateTime(), endTime))
-                .limit(size)
-                .map(this::toChatLog)
+        for (int currentPage = 1; currentPage <= page; currentPage++) {
+            SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
+                    .index(ARCHIVE_INDEX)
+                    .query(query)
+                    .size(size)
+                    .sort(sort -> sort.field(field -> field.field("create_time").order(SortOrder.Desc)))
+                    .sort(sort -> sort.field(field -> field.field(ARCHIVE_ID_SORT_FIELD).order(SortOrder.Desc)));
+
+            if (searchAfter != null && !searchAfter.isEmpty()) {
+                requestBuilder.searchAfter(searchAfter);
+            }
+
+            response = elasticsearchClient.search(requestBuilder.build(), JsonNode.class);
+            List<co.elastic.clients.elasticsearch.core.search.Hit<JsonNode>> hits = response.hits().hits();
+            if (hits.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            if (currentPage < page) {
+                searchAfter = hits.get(hits.size() - 1).sort();
+                if (searchAfter == null || searchAfter.isEmpty()) {
+                    return Collections.emptyList();
+                }
+            }
+        }
+
+        if (response == null) {
+            return Collections.emptyList();
+        }
+
+        return response.hits().hits().stream()
+            .map(co.elastic.clients.elasticsearch.core.search.Hit::source)
+            .map(this::toChatLog)
                 .collect(Collectors.toList());
     }
 
@@ -100,57 +149,124 @@ public class ArchiveSearchService {
         return chatMessageService.list(query);
     }
 
-    private ChatMessageLog toChatLog(ChatMessageIndex index) {
-        Long id = null;
-        try {
-            id = index.getId() == null ? null : Long.valueOf(index.getId());
-        } catch (Exception ignored) {
+    private ChatMessageLog toChatLog(JsonNode source) {
+        if (source == null || source.isMissingNode()) {
+            return new ChatMessageLog();
         }
         return new ChatMessageLog()
-                .setId(id)
-                .setPlayerId(index.getPlayerId())
-                .setContent(index.getContent())
-                .setPlatform(index.getPlatform())
-                .setDecision(index.getDecision())
-                .setRiskScore(index.getRiskScore())
-                .setLabels(index.getLabels())
-                .setCreateTime(index.getCreateTime());
+                .setId(toLong(source.get("id")))
+                .setPlayerId(toText(source.get("player_id"), source.get("playerId")))
+                .setContent(toText(source.get("content")))
+                .setPlatform(toText(source.get("platform")))
+                .setDecision(toText(source.get("decision")))
+                .setRiskScore(toInteger(source.get("risk_score"), source.get("riskScore")))
+                .setLabels(toText(source.get("labels")))
+                .setCreateTime(toLocalDateTime(source.get("create_time"), source.get("createTime")));
     }
 
-    private boolean containsIgnoreCase(String source, String target) {
-        if (target == null || target.isBlank()) {
-            return true;
+    private Query buildEsQuery(String keyword,
+                               String playerId,
+                               String decision,
+                               String labels,
+                               LocalDateTime startTime,
+                               LocalDateTime endTime) {
+        BoolQuery.Builder boolQuery = new BoolQuery.Builder();
+
+        if (hasText(keyword)) {
+            boolQuery.must(query -> query.match(match -> match.field("content").query(keyword)));
         }
-        if (source == null) {
-            return false;
+
+        if (hasText(playerId)) {
+            boolQuery.filter(query -> query.term(term -> term.field("player_id").value(playerId)));
         }
-        return source.toLowerCase().contains(target.toLowerCase());
+
+        if (hasText(decision)) {
+            boolQuery.filter(query -> query.term(term -> term.field("decision").value(decision)));
+        }
+
+        if (hasText(labels)) {
+            boolQuery.filter(query -> query.wildcard(wildcard -> wildcard
+                    .field("labels")
+                    .value("*" + escapeWildcard(labels) + "*")
+                    .caseInsensitive(true)));
+        }
+
+        if (startTime != null || endTime != null) {
+            boolQuery.filter(query -> query.range(range -> {
+                range.field("create_time");
+                if (startTime != null) {
+                    range.gte(JsonData.of(formatEsDateTime(startTime)));
+                }
+                if (endTime != null) {
+                    range.lte(JsonData.of(formatEsDateTime(endTime)));
+                }
+                return range;
+            }));
+        }
+
+        return Query.of(query -> query.bool(boolQuery.build()));
     }
 
-    private boolean equalsIfPresent(String source, String target) {
-        if (target == null || target.isBlank()) {
-            return true;
-        }
-        return target.equals(source);
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
-    private boolean geIfPresent(LocalDateTime source, LocalDateTime target) {
-        if (target == null) {
-            return true;
-        }
-        if (source == null) {
-            return false;
-        }
-        return !source.isBefore(target);
+    private String formatEsDateTime(LocalDateTime value) {
+        return value.format(ES_DATE_TIME_FORMATTER);
     }
 
-    private boolean leIfPresent(LocalDateTime source, LocalDateTime target) {
-        if (target == null) {
-            return true;
+    private String escapeWildcard(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("*", "\\*")
+                .replace("?", "\\?");
+    }
+
+    private String toText(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && !candidate.isNull()) {
+                return candidate.asText();
+            }
         }
-        if (source == null) {
-            return false;
+        return null;
+    }
+
+    private Integer toInteger(JsonNode... candidates) {
+        for (JsonNode candidate : candidates) {
+            if (candidate != null && !candidate.isNull()) {
+                return candidate.isInt() ? candidate.intValue() : Integer.valueOf(candidate.asText());
+            }
         }
-        return !source.isAfter(target);
+        return null;
+    }
+
+    private Long toLong(JsonNode candidate) {
+        if (candidate == null || candidate.isNull()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(candidate.asText());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private LocalDateTime toLocalDateTime(JsonNode... candidates) {
+        String value = toText(candidates);
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(value);
+        } catch (Exception ignored) {
+        }
+        try {
+            return LocalDateTime.parse(value, ES_DATE_TIME_FORMATTER);
+        } catch (Exception ignored) {
+        }
+        try {
+            return LocalDateTime.parse(value, MYSQL_DATE_TIME_FORMATTER);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

@@ -4,19 +4,49 @@
 你负责 StarShield 系统中基于 Elasticsearch 8.x 的亿级数据秒级检索能力建设，
 包括索引设计、高亮搜索、聚合分析以及语义向量搜索的落地。
 
+当前项目处于“归档检索 MySQL 兜底可用，ES 能力待切正”的阶段：
+- 写链路已具备 `Consumer -> MySQL -> ES` 双写骨架。
+- 读链路当前仍以 `ArchiveSearchService` 的 MySQL / Spring Data Elasticsearch 过渡实现为主。
+- 你的核心目标不是继续堆叠 Repository 查询，而是推动检索读路径切换到 **Elasticsearch Java Client 8.x DSL**。
+
 ## 核心技能 (Skills)
 - Mapping 设计：字段类型选择（keyword/text/date/dense_vector），分词器配置（IK 分词）
 - 复杂查询：Bool Query、高亮（Highlight）、排序（Sort）、滚动分页（search_after）
 - 聚合分析：Terms Aggregation（平台分布）、Date Histogram（时间趋势）、Top Hits
 - 向量搜索：text_embedding + kNN 语义相似度搜索，用于相似违规内容召回
-- Java 客户端：Elasticsearch Java Client 8.x（新版，非 RestHighLevelClient）
+- Java 客户端：Elasticsearch Java Client 8.x（新版，优先于 Spring Data Repository 派生查询）
+- 检索架构治理：索引版本管理、回填同步、查询降级、接口契约对齐、性能压测
 
 ## 行动准则 (Mission)
 1. 所有索引 Mapping **必须显式定义**，禁止使用动态 Mapping（`dynamic: false`）。
 2. 分页查询**必须使用 `search_after`** 而非 `from+size`，避免深翻页 OOM。
 3. 聚合查询必须设置合理的 `size` 上限，防止桶爆炸（Bucket Explosion）。
 4. 每次变更索引 Mapping 后，在 `.ai-logs/P6_ES_Search/` 下生成 Mapping 版本记录。
-5. 代码注释格式：`@author AI (under P6_ES_Search supervision)`
+5. 所有接口字段、枚举和值域必须先对齐 `docs/api-spec.yaml`，禁止擅自改动既有契约。
+6. 写链路必须遵守 `.airules`：海量发言日志严禁绕过 `Producer -> RabbitMQ -> Consumer -> ES/DB` 链路。
+7. 若 ES 未启用或集群不可用，允许保留 MySQL 兜底读路径，但必须显式标注“临时降级”，不能把它当作最终方案。
+8. 代码注释格式：`@author AI (under P6_ES_Search supervision)`
+
+## 当前项目事实 (Project Facts)
+- 后端技术栈：Java 17 + Spring Boot 3.2.x。
+- 已引入 `spring-boot-starter-data-elasticsearch`，当前 `application.yml` 中 `starshield.archive.es-enabled` 默认是 `false`。
+- 现有归档文档模型 `ChatMessageIndex` 仅覆盖部分字段，尚未完整映射 `ChatMessageLog`。
+- 当前 `ArchiveSearchService` 的 ES 路径仍是“分页拉取 + Java 内存过滤”，这不符合亿级检索目标。
+- 当前仓库中未发现 PDF 设计文档；若后续新增 PDF，以最新 PDF 约束优先，但不得与 `.airules`、`README.md`、`docs/api-spec.yaml` 冲突。
+
+## StarShield 检索字段基线
+在设计索引和查询前，默认基于 `entity/ChatMessageLog.java` 的字段全集，而不是旧版最小骨架：
+- `id`
+- `playerId`
+- `content`
+- `platform`
+- `status`
+- `decision`
+- `riskScore`
+- `labels`
+- `hitWords`
+- `aiAnalysisResult`
+- `createTime`
 
 ## 推荐索引 Mapping 骨架
 ```json
@@ -38,13 +68,34 @@
       "content":     { "type": "text", "analyzer": "ik_smart_analyzer" },
       "platform":    { "type": "keyword" },
       "status":      { "type": "integer" },
+      "decision":    { "type": "keyword" },
+      "risk_score":  { "type": "integer" },
+      "labels":      { "type": "keyword" },
+      "hit_words":   { "type": "keyword" },
+      "ai_analysis_result": { "type": "keyword", "index": false },
       "create_time": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss" }
     }
   }
 }
 ```
 
+## 首选落地顺序
+1. 校验 API 契约与实体字段，确认检索条件和返回结构不偏离 `docs/api-spec.yaml`。
+2. 补齐索引 Mapping 与索引版本记录，明确别名切换策略。
+3. 将 `ArchiveSearchService` 从 Repository + 内存过滤切换为 Java Client 8.x DSL 查询。
+4. 将分页模式从 `page/limit` 内部转换为稳定排序 + `search_after` 游标模型；若外部接口暂不调整，至少在服务内部消除深翻页实现。
+5. 增加高亮、平台分布和时间趋势聚合能力，并限制聚合桶大小。
+6. 补齐 ES 不可用时的降级、回填和重放方案。
+7. 仅在基础检索稳定后，再推进语义向量检索。
+
+## 交付要求
+- 输出的改动必须优先解释“为什么当前实现不满足 P6 目标”。
+- 每次完成检索能力演进后，在 `.ai-logs/P6_ES_Search/` 记录：背景、索引版本、接口影响、降级策略、待办。
+- 若发现现有实现仍停留在 Spring Data Elasticsearch Repository 层，默认判定为“过渡态”，需要给出迁移到 Java Client 8.x 的具体步骤。
+
 ## 上下文加载顺序
 1. 读取 `.airules` 了解全局约束
 2. 读取 `entity/ChatMessageLog.java` 确认字段列表
-3. 确认 ES 集群版本后再编写客户端代码
+3. 读取 `docs/api-spec.yaml` 中 `/api/archive/search` 契约
+4. 读取 `ArchiveSearchService` / `ArchiveSyncService` / `ChatMessageIndex` 了解当前实现边界
+5. 确认 ES 集群版本后再编写客户端代码
