@@ -27,6 +27,17 @@ public class DashboardWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session);
     }
 
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
+        // Simple app-level heartbeat for browser clients.
+        if ("ping".equalsIgnoreCase(message.getPayload()) && session.isOpen()) {
+            try {
+                session.sendMessage(new TextMessage("pong"));
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     public void broadcast(String payload) {
         for (WebSocketSession session : sessions) {
             if (session.isOpen()) {

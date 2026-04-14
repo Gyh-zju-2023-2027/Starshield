@@ -2,7 +2,12 @@
   <div class="board-wrap">
     <header class="board-header">
       <h1>全服舆情实时看板</h1>
-      <el-button @click="refresh">刷新</el-button>
+      <div class="header-right">
+        <span class="ws-indicator" :class="{ online: wsConnected }">
+          {{ wsConnected ? 'WS 在线' : 'WS 重连中' }}
+        </span>
+        <el-button @click="refreshNow">刷新</el-button>
+      </div>
     </header>
 
     <section class="kpi-grid">
@@ -47,6 +52,12 @@ import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { fetchDashboardMetrics } from '../api/dashboard'
 
+// @author AI (under P9_Dashboard_FE supervision)
+const REALTIME_INTERVAL_MS = 1000
+const TREND_INTERVAL_MS = 5000
+const HEARTBEAT_INTERVAL_MS = 30000
+const MAX_RECONNECT_TIMES = 5
+
 const metrics = reactive({
   total: 0,
   blocked: 0,
@@ -56,13 +67,24 @@ const metrics = reactive({
 })
 
 const trendChartRef = ref(null)
-let chart = null
-let ws = null
+const wsConnected = ref(false)
+
 const points = reactive({
   x: [],
   blockRate: [],
   review: []
 })
+
+let chart = null
+let ws = null
+let rafId = 0
+let lastRealtimeAt = 0
+let lastTrendAt = 0
+let reconnectTimes = 0
+let reconnectTimer = null
+let heartbeatTimer = null
+let refreshRunning = false
+let isUnmounted = false
 
 function formatRate(val) {
   return Number(val || 0).toFixed(2)
@@ -126,6 +148,7 @@ function initChart() {
 function pushPoint() {
   const now = new Date()
   const key = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+
   points.x.push(key)
   points.blockRate.push(Number(formatRate(metrics.blockRate)))
   points.review.push(Number(metrics.review || 0))
@@ -147,52 +170,167 @@ function pushPoint() {
   }
 }
 
+function applyMetricsData(data) {
+  if (!data) return
+  Object.assign(metrics, {
+    total: data.total || 0,
+    blocked: data.blocked || 0,
+    review: data.review || 0,
+    blockRate: data.blockRate || 0,
+    latest: Array.isArray(data.latest) ? data.latest : []
+  })
+}
+
 function applyPayload(payload) {
-  if (!payload || payload.code !== 200 || !payload.data) return
-  Object.assign(metrics, payload.data)
-  pushPoint()
+  if (!payload) return
+  if (payload.code === 200 && payload.data) {
+    applyMetricsData(payload.data)
+    return
+  }
+  if (payload.type === 'REALTIME_STATS' && payload.data) {
+    applyMetricsData(payload.data)
+  }
 }
 
-async function refresh() {
-  const res = await fetchDashboardMetrics()
-  applyPayload(res)
+async function refreshNow() {
+  if (refreshRunning) return
+  refreshRunning = true
+  try {
+    const res = await fetchDashboardMetrics()
+    applyPayload(res)
+  } catch (_) {
+    // keep silent for dashboard stability
+  } finally {
+    refreshRunning = false
+  }
 }
 
-function initWebSocket() {
+function stopHeartbeat() {
+  if (!heartbeatTimer) return
+  clearInterval(heartbeatTimer)
+  heartbeatTimer = null
+}
+
+function startHeartbeat() {
+  stopHeartbeat()
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send('ping')
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+}
+
+function scheduleReconnect() {
+  if (isUnmounted || reconnectTimes >= MAX_RECONNECT_TIMES) return
+  const delay = Math.min(1000 * (2 ** reconnectTimes), 30000)
+  reconnectTimes += 1
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+  }
+  reconnectTimer = setTimeout(connectWebSocket, delay)
+}
+
+function connectWebSocket() {
+  if (isUnmounted) return
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
   ws = new WebSocket(`${protocol}://${window.location.host}/ws/dashboard`)
 
+  ws.onopen = () => {
+    wsConnected.value = true
+    reconnectTimes = 0
+    startHeartbeat()
+  }
+
   ws.onmessage = (event) => {
+    if (event.data === 'pong') return
     try {
       const payload = JSON.parse(event.data)
       applyPayload(payload)
     } catch (_) {
-      // ignore
+      // ignore malformed messages
     }
   }
 
   ws.onclose = () => {
-    setTimeout(initWebSocket, 3000)
+    wsConnected.value = false
+    stopHeartbeat()
+    scheduleReconnect()
   }
+
+  ws.onerror = () => {
+    wsConnected.value = false
+    stopHeartbeat()
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.close()
+    }
+  }
+}
+
+function tick(timestamp) {
+  if (isUnmounted) return
+
+  if (!lastRealtimeAt || timestamp - lastRealtimeAt >= REALTIME_INTERVAL_MS) {
+    lastRealtimeAt = timestamp
+    refreshNow()
+  }
+
+  if (!lastTrendAt || timestamp - lastTrendAt >= TREND_INTERVAL_MS) {
+    lastTrendAt = timestamp
+    pushPoint()
+  }
+
+  rafId = window.requestAnimationFrame(tick)
+}
+
+function startLoop() {
+  stopLoop()
+  rafId = window.requestAnimationFrame(tick)
+}
+
+function stopLoop() {
+  if (!rafId) return
+  window.cancelAnimationFrame(rafId)
+  rafId = 0
+}
+
+function resizeChart() {
+  if (chart) chart.resize()
 }
 
 onMounted(async () => {
   await nextTick()
   initChart()
-  await refresh()
-  initWebSocket()
+  await refreshNow()
+  pushPoint()
+  connectWebSocket()
+  startLoop()
   window.addEventListener('resize', resizeChart)
 })
 
 onUnmounted(() => {
-  if (ws) ws.close()
-  if (chart) chart.dispose()
+  isUnmounted = true
+  stopLoop()
+
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  stopHeartbeat()
+
+  if (ws) {
+    ws.close()
+    ws = null
+  }
+
+  if (chart) {
+    chart.dispose()
+    chart = null
+  }
+
   window.removeEventListener('resize', resizeChart)
 })
-
-function resizeChart() {
-  if (chart) chart.resize()
-}
 </script>
 
 <style scoped>
@@ -207,6 +345,28 @@ function resizeChart() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-indicator {
+  border: 1px solid #6f4f2a;
+  border-radius: 999px;
+  background: rgba(130, 89, 36, 0.25);
+  color: #ffbf73;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.ws-indicator.online {
+  border-color: #296b3a;
+  background: rgba(45, 132, 74, 0.22);
+  color: #94f2b0;
 }
 
 .kpi-grid {
