@@ -34,6 +34,28 @@
       <div ref="trendChartRef" class="chart"></div>
     </section>
 
+    <section class="analysis-grid">
+      <div class="panel">
+        <h3>热点词云（最近100条）</h3>
+        <div class="word-cloud">
+          <span
+            v-for="(item, idx) in metrics.hotWords"
+            :key="`${item.word}-${idx}`"
+            class="word-item"
+            :style="wordStyle(item, idx)"
+          >
+            {{ item.word }}
+          </span>
+          <span v-if="!metrics.hotWords.length" class="word-empty">暂无热点词</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>分区对比图（平台分布）</h3>
+        <div ref="platformChartRef" class="platform-chart"></div>
+      </div>
+    </section>
+
     <section class="stream-panel">
       <h3>最新消息流（最近100条）</h3>
       <div class="stream-list">
@@ -63,10 +85,13 @@ const metrics = reactive({
   blocked: 0,
   review: 0,
   blockRate: 0,
-  latest: []
+  latest: [],
+  hotWords: [],
+  platformDistribution: {}
 })
 
 const trendChartRef = ref(null)
+const platformChartRef = ref(null)
 const wsConnected = ref(false)
 
 const points = reactive({
@@ -76,6 +101,7 @@ const points = reactive({
 })
 
 let chart = null
+let platformChart = null
 let ws = null
 let rafId = 0
 let lastRealtimeAt = 0
@@ -145,6 +171,52 @@ function initChart() {
   })
 }
 
+function initPlatformChart() {
+  if (!platformChartRef.value) return
+  platformChart = echarts.init(platformChartRef.value)
+  renderPlatformChart()
+}
+
+function renderPlatformChart() {
+  if (!platformChart) return
+  const dist = metrics.platformDistribution || {}
+  const entries = Object.entries(dist)
+    .map(([name, value]) => ({ name, value: Number(value || 0) }))
+    .sort((a, b) => b.value - a.value)
+
+  platformChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 60, right: 20, top: 26, bottom: 26 },
+    xAxis: {
+      type: 'category',
+      data: entries.map((x) => x.name),
+      axisLine: { lineStyle: { color: '#48608f' } },
+      axisLabel: { color: '#bfd2ff', rotate: 12 }
+    },
+    yAxis: {
+      type: 'value',
+      axisLine: { lineStyle: { color: '#48608f' } },
+      splitLine: { lineStyle: { color: '#1d2a46' } },
+      axisLabel: { color: '#bfd2ff' }
+    },
+    series: [
+      {
+        type: 'bar',
+        data: entries.map((x) => x.value),
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#73c1ff' },
+            { offset: 1, color: '#2b6cf5' }
+          ]),
+          borderRadius: [6, 6, 0, 0]
+        },
+        barMaxWidth: 44
+      }
+    ]
+  })
+}
+
 function pushPoint() {
   const now = new Date()
   const key = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
@@ -172,13 +244,101 @@ function pushPoint() {
 
 function applyMetricsData(data) {
   if (!data) return
+  const latest = Array.isArray(data.latest) ? data.latest : []
+  const blockedWordSet = buildBlockedWordSet(latest)
   Object.assign(metrics, {
     total: data.total || 0,
     blocked: data.blocked || 0,
     review: data.review || 0,
     blockRate: data.blockRate || 0,
-    latest: Array.isArray(data.latest) ? data.latest : []
+    latest,
+    hotWords: Array.isArray(data.hotWords)
+      ? filterHotWords(data.hotWords, blockedWordSet)
+      : buildHotWords(latest, blockedWordSet),
+    platformDistribution: data.platformDistribution || buildPlatformDistribution(latest)
   })
+  renderPlatformChart()
+}
+
+function buildPlatformDistribution(latest) {
+  const summary = {}
+  for (const item of latest) {
+    const key = String(item?.platform || 'UNKNOWN')
+    summary[key] = (summary[key] || 0) + 1
+  }
+  return summary
+}
+
+function tokenizeWords(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^\u4e00-\u9fa5A-Za-z0-9]+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+}
+
+function buildBlockedWordSet(latest) {
+  const blockedWords = new Set()
+  for (const item of latest) {
+    const isBlocked = item?.decision === 'BLOCK' || Number(item?.status) === 2
+    if (!isBlocked) continue
+
+    const hitWords = tokenizeWords(item?.hitWords)
+    const contentWords = tokenizeWords(item?.content)
+
+    for (const word of hitWords) {
+      blockedWords.add(word)
+    }
+    for (const word of contentWords) {
+      blockedWords.add(word)
+    }
+  }
+  return blockedWords
+}
+
+function filterHotWords(hotWords, blockedWordSet) {
+  return hotWords
+    .map((x) => ({
+      word: String(x?.word || '').toLowerCase(),
+      count: Number(x?.count || 0)
+    }))
+    .filter((x) => x.word && x.count > 0 && !blockedWordSet.has(x.word))
+    .slice(0, 24)
+}
+
+function buildHotWords(latest, blockedWordSet) {
+  const stopWords = new Set([
+    '的', '了', '是', '在', '和', '就', '都', '这', '那', '你', '我', '他',
+    '她', '它', '我们', '你们', '他们', '一个', '这个', '那个', '还有', '已经',
+    '可以', '一下', '真的', '就是', '然后', '但是', '因为', '所以', 'please',
+    'the', 'and', 'for', 'with', 'that', 'this', 'from'
+  ])
+  const counter = {}
+
+  for (const item of latest) {
+    const words = tokenizeWords(item?.content)
+      .filter((x) => x.length >= 2 && !stopWords.has(x))
+
+    for (const word of words) {
+      counter[word] = (counter[word] || 0) + 1
+    }
+  }
+
+  return Object.entries(counter)
+    .map(([word, count]) => ({ word, count }))
+    .filter((x) => !blockedWordSet.has(x.word))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 24)
+}
+
+function wordStyle(item, idx) {
+  const count = Number(item?.count || 0)
+  const size = Math.max(14, Math.min(36, 12 + count * 3))
+  const hue = (idx * 41) % 360
+  return {
+    fontSize: `${size}px`,
+    color: `hsl(${hue} 78% 72%)`
+  }
 }
 
 function applyPayload(payload) {
@@ -296,11 +456,13 @@ function stopLoop() {
 
 function resizeChart() {
   if (chart) chart.resize()
+  if (platformChart) platformChart.resize()
 }
 
 onMounted(async () => {
   await nextTick()
   initChart()
+  initPlatformChart()
   await refreshNow()
   pushPoint()
   connectWebSocket()
@@ -327,6 +489,10 @@ onUnmounted(() => {
   if (chart) {
     chart.dispose()
     chart = null
+  }
+  if (platformChart) {
+    platformChart.dispose()
+    platformChart = null
   }
 
   window.removeEventListener('resize', resizeChart)
@@ -405,6 +571,46 @@ onUnmounted(() => {
 
 .chart {
   height: 280px;
+}
+
+.analysis-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.panel {
+  border: 1px solid #2b395c;
+  border-radius: 10px;
+  padding: 12px;
+  background: #0d1424;
+}
+
+.word-cloud {
+  min-height: 220px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-content: flex-start;
+  padding-top: 8px;
+}
+
+.word-item {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.1;
+  font-weight: 700;
+  padding: 2px 4px;
+}
+
+.word-empty {
+  color: #8ea3cf;
+  font-size: 13px;
+}
+
+.platform-chart {
+  height: 230px;
 }
 
 .stream-panel {
