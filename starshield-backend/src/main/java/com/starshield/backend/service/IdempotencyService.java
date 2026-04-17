@@ -1,8 +1,10 @@
 package com.starshield.backend.service;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -14,6 +16,10 @@ public class IdempotencyService {
 
     private static final String KEY_PREFIX = "starshield:idem:";
     private static final long TTL_MINUTES = 5L;
+    private static final DefaultRedisScript<Long> CONSUME_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('exists', KEYS[1]) == 1 then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class
+    );
 
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -42,10 +48,7 @@ public class IdempotencyService {
             return false;
         }
         String redisKey = KEY_PREFIX + key;
-        Boolean exists = stringRedisTemplate.hasKey(redisKey);
-        if (!Boolean.TRUE.equals(exists)) {
-            return false;
-        }
-        return Boolean.TRUE.equals(stringRedisTemplate.delete(redisKey));
+        Long deleted = stringRedisTemplate.execute(CONSUME_SCRIPT, Collections.singletonList(redisKey));
+        return deleted != null && deleted > 0L;
     }
 }

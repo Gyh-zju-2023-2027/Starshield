@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.entity.ModerationAuditLog;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -53,6 +54,7 @@ public class AdminReviewService {
      *
      * @author AI (under P5 supervision)
      */
+    @Transactional(rollbackFor = Exception.class)
     public boolean confirmBan(Long id, String operator) {
         ChatMessageLog target = chatMessageService.getById(id);
         if (target == null) {
@@ -68,12 +70,24 @@ public class AdminReviewService {
         String appendLabel = target.getLabels() == null ? "manual_ban" : target.getLabels() + ",manual_ban";
         target.setLabels(appendLabel);
         boolean updated = chatMessageService.updateById(target);
-
-        if (updated) {
-            saveAudit(id, operator, "CONFIRM_BAN", beforeDecision, target.getDecision(), beforeRisk, target.getRiskScore());
+        if (!updated) {
+            return false;
         }
 
-        return updated;
+        boolean auditSaved = saveAudit(
+                id,
+                operator,
+                "CONFIRM_BAN",
+                beforeDecision,
+                target.getDecision(),
+                beforeRisk,
+                target.getRiskScore()
+        );
+        if (!auditSaved) {
+            throw new IllegalStateException("Failed to persist moderation audit log for confirm-ban");
+        }
+
+        return true;
     }
 
     /**
@@ -81,6 +95,7 @@ public class AdminReviewService {
      *
      * @author AI (under P5 supervision)
      */
+    @Transactional(rollbackFor = Exception.class)
     public boolean release(Long id, String operator) {
         ChatMessageLog target = chatMessageService.getById(id);
         if (target == null) {
@@ -96,21 +111,33 @@ public class AdminReviewService {
         String appendLabel = target.getLabels() == null ? "manual_release" : target.getLabels() + ",manual_release";
         target.setLabels(appendLabel);
         boolean updated = chatMessageService.updateById(target);
-
-        if (updated) {
-            saveAudit(id, operator, "RELEASE", beforeDecision, target.getDecision(), beforeRisk, target.getRiskScore());
+        if (!updated) {
+            return false;
         }
 
-        return updated;
+        boolean auditSaved = saveAudit(
+                id,
+                operator,
+                "RELEASE",
+                beforeDecision,
+                target.getDecision(),
+                beforeRisk,
+                target.getRiskScore()
+        );
+        if (!auditSaved) {
+            throw new IllegalStateException("Failed to persist moderation audit log for release");
+        }
+
+        return true;
     }
 
-    private void saveAudit(Long messageId,
-                           String operator,
-                           String action,
-                           String beforeDecision,
-                           String afterDecision,
-                           Integer beforeRisk,
-                           Integer afterRisk) {
+    private boolean saveAudit(Long messageId,
+                              String operator,
+                              String action,
+                              String beforeDecision,
+                              String afterDecision,
+                              Integer beforeRisk,
+                              Integer afterRisk) {
         ModerationAuditLog auditLog = new ModerationAuditLog()
                 .setMessageId(messageId)
                 .setOperator(operator == null || operator.isBlank() ? "system" : operator)
@@ -120,6 +147,6 @@ public class AdminReviewService {
                 .setBeforeRiskScore(beforeRisk)
                 .setAfterRiskScore(afterRisk)
                 .setCreateTime(LocalDateTime.now());
-        moderationAuditLogService.save(auditLog);
+        return moderationAuditLogService.save(auditLog);
     }
 }
