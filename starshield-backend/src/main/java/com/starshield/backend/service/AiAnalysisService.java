@@ -12,7 +12,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
@@ -48,6 +53,9 @@ public class AiAnalysisService {
 
     @Value("${starshield.ai.deepseek-url:https://api.deepseek.com/v1/chat/completions}")
     private String deepseekUrl;
+
+    @Value("${starshield.ai.dotenv-fallback-enabled:true}")
+    private boolean dotenvFallbackEnabled = true;
 
     private final Supplier<String> apiKeySupplier;
 
@@ -106,7 +114,7 @@ public class AiAnalysisService {
     }
 
     private AiModerationResult callDeepSeekForFinalDecision(String content, double fallbackScore) {
-        String apiKey = apiKeySupplier.get();
+        String apiKey = resolveApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("[AI分析] DEEPSEEK_API_KEY 未配置，触发降级");
             return degradedResult("LLM配置缺失，降级人工复核", fallbackScore);
@@ -242,6 +250,58 @@ public class AiAnalysisService {
             return DEEPSEEK_CHAT_URL;
         }
         return deepseekUrl;
+    }
+
+    private String resolveApiKey() {
+        String apiKey = apiKeySupplier.get();
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey.trim();
+        }
+        if (!dotenvFallbackEnabled) {
+            return null;
+        }
+        return resolveApiKeyFromDotEnv();
+    }
+
+    private String resolveApiKeyFromDotEnv() {
+        List<Path> candidates = List.of(
+                Paths.get(".env").toAbsolutePath().normalize(),
+                Paths.get("..", ".env").toAbsolutePath().normalize(),
+                Paths.get("..", "..", ".env").toAbsolutePath().normalize()
+        );
+        for (Path path : candidates) {
+            String key = readKeyFromEnvFile(path, "DEEPSEEK_API_KEY");
+            if (key != null && !key.isBlank()) {
+                log.debug("[AI分析] 从 .env 文件加载 DEEPSEEK_API_KEY, path={}", path);
+                return key;
+            }
+        }
+        return null;
+    }
+
+    private String readKeyFromEnvFile(Path path, String keyName) {
+        if (!Files.exists(path)) {
+            return null;
+        }
+        try {
+            for (String rawLine : Files.readAllLines(path)) {
+                String line = rawLine == null ? "" : rawLine.trim();
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                if (!line.startsWith(keyName + "=")) {
+                    continue;
+                }
+                String value = line.substring((keyName + "=").length()).trim();
+                if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+                    value = value.substring(1, value.length() - 1);
+                }
+                return value.trim();
+            }
+        } catch (IOException e) {
+            log.warn("[AI分析] 读取 .env 失败: {}", path, e);
+        }
+        return null;
     }
 
     private String extractJsonObject(String text) {

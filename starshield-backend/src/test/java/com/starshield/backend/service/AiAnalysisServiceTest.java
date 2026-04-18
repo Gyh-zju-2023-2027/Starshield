@@ -130,6 +130,7 @@ class AiAnalysisServiceTest {
         ReflectionTestUtils.setField(service, "passThreshold", 0.3d);
         ReflectionTestUtils.setField(service, "lightweightUrl", "http://localhost:" + port + "/score");
         ReflectionTestUtils.setField(service, "deepseekUrl", "http://localhost:" + port + "/v1/chat/completions");
+        ReflectionTestUtils.setField(service, "dotenvFallbackEnabled", false);
         return service;
     }
 }

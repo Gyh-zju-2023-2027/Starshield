@@ -70,7 +70,7 @@ starshield:
     player-qps: 30
   ai:
     provider: deepseek
-    prompt-version: v1
+    prompt-version: v2
     block-threshold: 0.8
     pass-threshold: 0.3
 
