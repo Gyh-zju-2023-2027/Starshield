@@ -63,3 +63,18 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# ===========================
+# AI Service（本地训练产物）
+# ===========================
+ai-service/.venv/
+ai-service/__pycache__/
+ai-service/training_metrics.json
+
+# 仅保留 ai-service 源码与依赖说明
+!ai-service/train.py
+!ai-service/serve.py
+!ai-service/requirements.txt
+
+# 训练数据集（体积大，不上传）
+data/

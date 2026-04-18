@@ -10,7 +10,7 @@ import lombok.experimental.Accessors;
 @Accessors(chain = true)
 public class AiModerationResult {
 
-    private Integer riskScore;
+    private int riskScore;
 
     private String labels;
 
@@ -23,4 +23,8 @@ public class AiModerationResult {
     private String provider;
 
     private String promptVersion;
+
+    private String modelTier;
+
+    private boolean degraded;
 }
