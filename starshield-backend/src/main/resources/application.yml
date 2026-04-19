@@ -17,7 +17,7 @@ spring:
     # 请将 YOUR_PASSWORD 替换为你本地 MySQL 的真实密码
     url: jdbc:mysql://localhost:3306/starshield?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
     username: root
-    password: guoyunhai
+    password: root
     hikari:
       # 连接池最大连接数，根据 DB 压力调整
       maximum-pool-size: 30
@@ -69,8 +69,10 @@ starshield:
     ip-qps: 300
     player-qps: 30
   ai:
-    provider: mock
-    prompt-version: v1
+    provider: deepseek
+    prompt-version: v2
+    block-threshold: 0.8
+    pass-threshold: 0.3
 
 # ===================== MyBatis-Plus 配置 =====================
 mybatis-plus:
