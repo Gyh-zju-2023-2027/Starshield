@@ -6,6 +6,7 @@ import com.starshield.backend.model.AiModerationResult;
 import com.starshield.backend.model.ModerationDecision;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -59,6 +60,7 @@ public class AiAnalysisService {
 
     private final Supplier<String> apiKeySupplier;
 
+    @Autowired
     public AiAnalysisService(RestClient.Builder restClientBuilder,
                              ObjectMapper objectMapper,
                              ControlPanelService controlPanelService) {
