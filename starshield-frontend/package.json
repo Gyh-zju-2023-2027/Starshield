@@ -9,14 +9,17 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.4.21",
-    "element-plus": "^2.7.2",
     "@element-plus/icons-vue": "^2.3.1",
     "axios": "^1.6.8",
-    "echarts": "^5.5.1"
+    "echarts": "^5.5.1",
+    "element-plus": "^2.7.2",
+    "vue": "^3.4.21"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.12",
+    "tailwindcss": "^3.4.19",
     "vite": "^5.2.0"
   }
 }

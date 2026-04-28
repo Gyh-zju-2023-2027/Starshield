@@ -1,47 +1,46 @@
 <template>
-  <div class="shield-wrap">
-    <!-- ===== 顶部标题栏 ===== -->
-    <header class="shield-header">
-      <div class="logo">
-        <span class="logo-icon">⬡</span>
-        <span class="logo-text">StarShield</span>
-        <span class="logo-sub">舆情监控中台</span>
-      </div>
-      <div class="header-tag">压力测试控制台</div>
+  <div class="min-h-full bg-[#020617] px-6 pb-14 pt-8 md:px-11">
+    <header class="mb-10 border-b border-white/10 pb-8">
+      <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/90">Aether Command · Load Test</p>
+      <h1 class="mt-2 font-display text-2xl font-semibold text-slate-100">压测入口 · 发射控制台</h1>
+      <p class="mt-2 max-w-xl text-sm text-slate-400">
+        将并发请求发往星盾接入层，校验 MQ / 消费者在高压下的吞吐与稳定性。
+      </p>
     </header>
 
-    <!-- ===== 主内容区 ===== -->
-    <main class="shield-main">
-
-      <!-- 参数配置卡片 -->
-      <section class="card config-card">
-        <h2 class="card-title">发射参数配置</h2>
-        <div class="config-grid">
-          <div class="config-item">
-            <label>并发请求数</label>
+    <div class="mx-auto max-w-3xl space-y-8">
+      <section
+        class="rounded-3xl border border-cyan-500/15 bg-gradient-to-br from-slate-900/85 to-[#070b18] p-8 shadow-[0_24px_64px_-20px_rgba(0,0,0,0.55)] backdrop-blur-[10px]"
+      >
+        <h2 class="font-display text-sm font-semibold uppercase tracking-[0.15em] text-slate-400">发射参数配置</h2>
+        <div class="mt-8 grid gap-8 sm:grid-cols-3">
+          <div class="flex flex-col gap-2">
+            <label class="text-[11px] font-bold uppercase tracking-wide text-slate-500">并发请求总数</label>
             <el-input-number
               v-model="config.total"
               :min="1"
               :max="5000"
               :step="100"
               :disabled="running"
-              class="cfg-input"
+              class="w-full"
+              controls-position="right"
             />
           </div>
-          <div class="config-item">
-            <label>批次大小</label>
+          <div class="flex flex-col gap-2">
+            <label class="text-[11px] font-bold uppercase tracking-wide text-slate-500">批次大小</label>
             <el-input-number
               v-model="config.batchSize"
               :min="1"
               :max="200"
               :step="10"
               :disabled="running"
-              class="cfg-input"
+              class="w-full"
+              controls-position="right"
             />
           </div>
-          <div class="config-item">
-            <label>来源平台</label>
-            <el-select v-model="config.platform" :disabled="running" class="cfg-input">
+          <div class="flex flex-col gap-2">
+            <label class="text-[11px] font-bold uppercase tracking-wide text-slate-500">来源平台</label>
+            <el-select v-model="config.platform" :disabled="running" class="w-full">
               <el-option label="游戏内聊天" value="GAME_INNER" />
               <el-option label="B站弹幕" value="BILIBILI" />
               <el-option label="微博评论" value="WEIBO" />
@@ -49,115 +48,131 @@
             </el-select>
           </div>
         </div>
+
+        <div class="mt-8 flex flex-col gap-4 border-t border-white/10 pt-8">
+          <label class="text-[11px] font-bold uppercase tracking-wide text-slate-500">发言内容来源</label>
+          <el-radio-group v-model="contentMode" :disabled="running" class="flex flex-wrap gap-2">
+            <el-radio-button value="pool">内置随机话术（压测）</el-radio-button>
+            <el-radio-button value="lines">粘贴真实文案（每行一条）</el-radio-button>
+          </el-radio-group>
+          <p v-if="contentMode === 'lines'" class="text-xs leading-relaxed text-slate-500">
+            将抓取粘贴的每一条真实发言按序循环发往接入 API，完整经过引擎 A（布隆敏感词）、轻量模型与 DeepSeek（需配置密钥与 Flask 评分服务）。
+          </p>
+          <el-input
+            v-if="contentMode === 'lines'"
+            v-model="realLinesText"
+            type="textarea"
+            :rows="9"
+            :disabled="running"
+            placeholder="从弹幕/评论区/工单导出等处复制：每行一条。条数少于总发射数时将循环使用。"
+            class="!font-mono text-[13px] leading-relaxed"
+          />
+        </div>
       </section>
 
-      <!-- 发射按钮区 -->
-      <section class="card launch-card">
+      <section class="flex justify-center">
         <button
-          class="launch-btn"
-          :class="{ firing: running, done: stats.done && !running }"
+          type="button"
+          class="group relative flex w-full max-w-xl overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 via-[#4e4af2] to-violet-600 px-8 py-5 text-center text-[15px] font-semibold tracking-wide text-white shadow-[0_20px_50px_-12px_rgba(78,74,242,0.65)] ring-2 ring-white/25 transition hover:brightness-105 disabled:opacity-85"
           :disabled="running"
           @click="startTest"
         >
-          <span v-if="!running && !stats.done" class="btn-inner">
-            <span class="btn-icon">▶</span>
-            模拟发送 {{ config.total }} 条并发日志
+          <span
+            v-if="!running && !stats.done"
+            class="inline-flex w-full items-center justify-center gap-2"
+          >
+            <span class="material-symbols-outlined text-2xl group-hover:scale-110">rocket_launch</span>
+            {{ launchButtonLabel }}
           </span>
-          <span v-else-if="running" class="btn-inner">
-            <span class="spinner"></span>
-            正在发射中... {{ stats.success + stats.fail }} / {{ config.total }}
+          <span v-else-if="running" class="inline-flex w-full items-center justify-center gap-3">
+            <span class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            正在发射中… {{ stats.success + stats.fail }} / {{ config.total }}
           </span>
-          <span v-else class="btn-inner">
-            <span class="btn-icon">✓</span>
-            测试完成 · 点击重新测试
+          <span v-else class="inline-flex w-full items-center justify-center gap-2">
+            <span class="material-symbols-outlined text-2xl text-emerald-200">verified</span>
+            测试完成 · 点击再次发射
           </span>
         </button>
       </section>
 
-      <!-- 实时统计面板 -->
-      <section class="card stats-card" v-if="stats.done || running">
-        <h2 class="card-title">实时统计</h2>
-        <div class="stats-grid">
-          <div class="stat-item">
-            <div class="stat-val success">{{ stats.success }}</div>
-            <div class="stat-label">成功</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-val fail">{{ stats.fail }}</div>
-            <div class="stat-label">失败</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-val total">{{ stats.success + stats.fail }}</div>
-            <div class="stat-label">已发送</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-val duration">{{ stats.duration }}ms</div>
-            <div class="stat-label">总耗时</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-val qps">{{ stats.qps }}</div>
-            <div class="stat-label">QPS</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-val rate"
-              :class="{ danger: parseFloat(stats.successRate) < 90 }">
-              {{ stats.successRate }}%
-            </div>
-            <div class="stat-label">成功率</div>
-          </div>
-        </div>
-
-        <!-- 进度条 -->
-        <div class="progress-wrap">
+      <section
+        v-if="stats.done || running"
+        class="rounded-3xl border border-white/10 bg-slate-900/65 p-8 shadow-xl backdrop-blur-[10px] ring-1 ring-white/[0.06]"
+      >
+        <h2 class="font-display text-sm font-semibold uppercase tracking-[0.15em] text-slate-400">实时统计</h2>
+        <div class="mt-8 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
           <div
-            class="progress-bar"
-            :style="{ width: progressPercent + '%' }"
-            :class="{ complete: !running && stats.done }"
-          ></div>
+            v-for="cell in statsCells"
+            :key="cell.key"
+            class="rounded-2xl border border-white/[0.08] bg-slate-950/60 px-4 py-4 text-center shadow-inner"
+          >
+            <div class="font-display text-2xl font-bold tracking-tight" :class="cell.colorClass">{{ cell.val }}</div>
+            <div class="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ cell.label }}</div>
+          </div>
         </div>
-        <div class="progress-label">{{ progressPercent }}%</div>
+        <div class="mt-8">
+          <div class="mb-2 h-2 overflow-hidden rounded-full bg-slate-800/90">
+            <div
+              class="h-full rounded-full bg-gradient-to-r from-[#4e4af2] via-indigo-500 to-emerald-400 transition-[width] duration-300"
+              :style="{ width: `${progressPercent}%` }"
+            />
+          </div>
+          <p class="text-right text-xs font-medium text-slate-500">{{ progressPercent }}%</p>
+        </div>
       </section>
 
-      <!-- 日志滚动面板 -->
-      <section class="card log-card" v-if="logs.length > 0">
-        <div class="log-header">
-          <h2 class="card-title">请求日志</h2>
-          <button class="clear-btn" @click="logs = []">清空</button>
+      <section
+        v-if="logs.length > 0"
+        class="overflow-hidden rounded-3xl bg-slate-950 text-left ring-2 ring-slate-800 shadow-2xl"
+      >
+        <div class="flex items-center justify-between border-b border-slate-700/70 bg-slate-900 px-6 py-3">
+          <div class="flex items-center gap-2 text-emerald-300">
+            <span class="material-symbols-outlined">terminal</span>
+            <span class="font-display text-xs font-semibold uppercase tracking-[0.2em]">Request Log Stream</span>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-slate-600 px-3 py-1 text-xs font-medium text-slate-400 hover:bg-slate-800 hover:text-white"
+            @click="logs = []"
+          >
+            清空
+          </button>
         </div>
-        <div class="log-scroll" ref="logContainer">
+        <div ref="logContainer" class="max-h-[320px] overflow-y-auto px-6 py-4 font-mono text-[11px] leading-relaxed">
           <div
             v-for="(entry, i) in logs"
             :key="i"
-            class="log-line"
-            :class="entry.type"
+            class="border-b border-slate-800/60 py-1.5 text-slate-300 last:border-0"
+            :class="{
+              '!text-emerald-400': entry.type === 'success',
+              '!text-amber-300': entry.type === 'warn',
+              '!text-rose-400': entry.type === 'error'
+            }"
           >
-            <span class="log-time">{{ entry.time }}</span>
-            <span class="log-msg">{{ entry.msg }}</span>
+            <span class="mr-4 text-slate-500">{{ entry.time }}</span>
+            <span>{{ entry.msg }}</span>
           </div>
         </div>
       </section>
-
-    </main>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick } from 'vue'
+import { computed, reactive, ref, nextTick } from 'vue'
 import { uploadChatMessage } from '../api/chat.js'
 
-// ===================== 响应式数据 =====================
+const contentMode = ref('pool')
+const realLinesText = ref('')
 
-/** 测试配置 */
 const config = reactive({
-  total: 1000,      // 并发请求总数
-  batchSize: 50,    // 每批次并发数（防止浏览器连接数限制）
+  total: 1000,
+  batchSize: 50,
   platform: 'GAME_INNER'
 })
 
-/** 运行状态 */
 const running = ref(false)
 
-/** 统计数据 */
 const stats = reactive({
   success: 0,
   fail: 0,
@@ -167,11 +182,8 @@ const stats = reactive({
   done: false
 })
 
-/** 日志列表（最多保留 500 条） */
 const logs = ref([])
 const logContainer = ref(null)
-
-// ===================== 计算属性 =====================
 
 const progressPercent = computed(() => {
   const total = config.total
@@ -179,30 +191,90 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.round(((stats.success + stats.fail) / total) * 100))
 })
 
-// ===================== 工具方法 =====================
+const launchButtonLabel = computed(() => {
+  if (contentMode.value === 'lines') {
+    return `用真实文案发送 ${config.total} 条（接入层入库 + 分析链路）`
+  }
+  return `模拟发送 ${config.total} 条并发日志`
+})
 
-/** 生成随机玩家ID */
+const statsCells = computed(() => [
+  {
+    key: 'ok',
+    val: stats.success,
+    label: '成功',
+    colorClass: 'text-emerald-400'
+  },
+  {
+    key: 'fail',
+    val: stats.fail,
+    label: '失败',
+    colorClass: 'text-rose-400'
+  },
+  {
+    key: 'sent',
+    val: stats.success + stats.fail,
+    label: '已发送',
+    colorClass: 'text-cyan-300'
+  },
+  {
+    key: 'time',
+    val: `${stats.duration} ms`,
+    label: '耗时',
+    colorClass: 'text-amber-300'
+  },
+  {
+    key: 'qps',
+    val: stats.qps,
+    label: 'QPS（估）',
+    colorClass: 'text-violet-300'
+  },
+  {
+    key: 'rate',
+    val: `${stats.successRate}%`,
+    label: '成功率',
+    colorClass: parseFloat(stats.successRate) < 90 ? 'text-rose-400' : 'text-emerald-400'
+  }
+])
+
 function randomPlayerId() {
   return 'P' + Math.floor(Math.random() * 9000000 + 1000000)
 }
 
-/** 随机发言内容库 */
 const contentPool = [
-  '这把操作太猛了！', '主播你好厉害！', '求组队一起打boss',
-  '这个装备怎么搭配？', '服务器卡不卡', '今天状态不错冲！',
-  '坑队友直接开踢', '新版本更新了什么', '这皮肤好看多少钱',
-  '大佬带带我吧！', '这局稳了', '为什么突然断线了？'
+  '这把操作太猛了！',
+  '主播你好厉害！',
+  '求组队一起打boss',
+  '这个装备怎么搭配？',
+  '服务器卡不卡',
+  '今天状态不错冲！'
 ]
 
 function randomContent() {
   return contentPool[Math.floor(Math.random() * contentPool.length)]
 }
 
-/** 追加日志（自动滚动到底部） */
+function parseRealLines() {
+  return realLinesText.value
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+}
+
+function resolveContent(index) {
+  if (contentMode.value === 'lines') {
+    const lines = parseRealLines()
+    if (lines.length === 0) {
+      return null
+    }
+    return lines[index % lines.length]
+  }
+  return randomContent()
+}
+
 function addLog(type, msg) {
   const now = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   logs.value.push({ type, time: now, msg })
-  // 超过 500 条自动裁剪，防止内存溢出
   if (logs.value.length > 500) {
     logs.value.splice(0, logs.value.length - 500)
   }
@@ -213,19 +285,12 @@ function addLog(type, msg) {
   })
 }
 
-// ===================== 核心测试逻辑 =====================
-
-/**
- * 开始并发压力测试
- *
- * 【架构说明】
- * 直接用 Promise.all 发送全部请求会触发浏览器并发限制（约 6 个 TCP 连接/域名），
- * 导致大量请求排队而非真正并发。
- * 此处采用「分批并发」策略：每批 batchSize 个请求真正并发执行，
- * 批次间无延迟，总体效果接近真实高并发场景。
- */
 async function startTest() {
-  // 重置状态
+  if (contentMode.value === 'lines' && parseRealLines().length === 0) {
+    addLog('error', '「真实文案」模式需要先粘贴至少一行内容。')
+    return
+  }
+
   running.value = true
   stats.success = 0
   stats.fail = 0
@@ -235,28 +300,37 @@ async function startTest() {
   stats.done = false
   logs.value = []
 
-  addLog('info', `开始压力测试：共 ${config.total} 条请求，批次大小 ${config.batchSize}`)
+  const modeHint =
+    contentMode.value === 'lines'
+      ? `真实文案模式，${parseRealLines().length} 条不重复语料循环使用`
+      : '内置随机话术'
+  addLog('info', `开始：共 ${config.total} 条，批次 ${config.batchSize}，${modeHint}`)
 
   const startTime = Date.now()
   const total = config.total
   const batchSize = config.batchSize
 
-  // 分批执行，每批并发 batchSize 个请求
   for (let i = 0; i < total; i += batchSize) {
     const batchEnd = Math.min(i + batchSize, total)
     const batchPromises = []
 
     for (let j = i; j < batchEnd; j++) {
+      const text = resolveContent(j)
+      if (text === null) {
+        addLog('error', '真实文案不可用，中止。')
+        running.value = false
+        stats.done = true
+        return
+      }
       const payload = {
         playerId: randomPlayerId(),
-        content: randomContent(),
+        content: text,
         platform: config.platform,
-        status: 0  // 初始状态：待处理
+        status: 0
       }
 
-      // 每个请求独立处理成功/失败，不因单个失败中断整体
       const p = uploadChatMessage(payload)
-        .then(res => {
+        .then((res) => {
           if (res && res.code === 200) {
             stats.success++
           } else {
@@ -264,7 +338,7 @@ async function startTest() {
             addLog('warn', `请求 #${j + 1} 响应异常: ${JSON.stringify(res)}`)
           }
         })
-        .catch(err => {
+        .catch((err) => {
           stats.fail++
           addLog('error', `请求 #${j + 1} 失败: ${err.message}`)
         })
@@ -272,13 +346,11 @@ async function startTest() {
       batchPromises.push(p)
     }
 
-    // 等待当前批次全部完成再进入下一批
     await Promise.all(batchPromises)
 
     addLog('info', `批次完成：${batchEnd}/${total}，成功 ${stats.success}，失败 ${stats.fail}`)
   }
 
-  // 计算最终统计数据
   const endTime = Date.now()
   stats.duration = endTime - startTime
   stats.qps = Math.round((total / stats.duration) * 1000)
@@ -292,394 +364,3 @@ async function startTest() {
   )
 }
 </script>
-
-<style scoped>
-/* ===================== 全局布局 ===================== */
-.shield-wrap {
-  min-height: 100vh;
-  background: #0b0f1a;
-  color: #c9d1e0;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
-}
-
-/* ===================== 顶部标题栏 ===================== */
-.shield-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 40px;
-  border-bottom: 1px solid #1e2940;
-  background: rgba(11, 15, 26, 0.95);
-  backdrop-filter: blur(10px);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.logo-icon {
-  font-size: 26px;
-  color: #4af0c8;
-  filter: drop-shadow(0 0 8px #4af0c880);
-  animation: pulse 3s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { filter: drop-shadow(0 0 6px #4af0c860); }
-  50%       { filter: drop-shadow(0 0 16px #4af0c8cc); }
-}
-
-.logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #e8f0ff;
-}
-
-.logo-sub {
-  font-size: 12px;
-  color: #4a5980;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border: 1px solid #1e2940;
-  border-radius: 4px;
-}
-
-.header-tag {
-  font-size: 12px;
-  color: #4af0c8;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  border: 1px solid #4af0c840;
-  padding: 4px 12px;
-  border-radius: 4px;
-  background: #4af0c808;
-}
-
-/* ===================== 主内容区 ===================== */
-.shield-main {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 36px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-/* ===================== 通用卡片 ===================== */
-.card {
-  background: #111827;
-  border: 1px solid #1e2940;
-  border-radius: 12px;
-  padding: 28px 32px;
-  position: relative;
-  overflow: hidden;
-}
-
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #4af0c8, #3b82f6, #8b5cf6);
-  opacity: 0.6;
-}
-
-.card-title {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #4a5980;
-  margin-bottom: 22px;
-}
-
-/* ===================== 配置卡片 ===================== */
-.config-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
-}
-
-.config-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.config-item label {
-  font-size: 12px;
-  color: #4a5980;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.cfg-input {
-  width: 100%;
-}
-
-/* Element Plus 暗色覆盖 */
-:deep(.el-input__wrapper),
-:deep(.el-input-number .el-input__wrapper) {
-  background: #0b0f1a !important;
-  box-shadow: 0 0 0 1px #1e2940 inset !important;
-}
-
-:deep(.el-input__inner) {
-  color: #c9d1e0 !important;
-  font-family: inherit !important;
-}
-
-:deep(.el-select .el-input__wrapper) {
-  background: #0b0f1a !important;
-  box-shadow: 0 0 0 1px #1e2940 inset !important;
-}
-
-:deep(.el-select-dropdown) {
-  background: #111827 !important;
-  border-color: #1e2940 !important;
-}
-
-:deep(.el-select-dropdown__item) {
-  color: #c9d1e0 !important;
-}
-
-:deep(.el-select-dropdown__item.hover),
-:deep(.el-select-dropdown__item:hover) {
-  background: #1e2940 !important;
-}
-
-/* ===================== 发射按钮 ===================== */
-.launch-card {
-  display: flex;
-  justify-content: center;
-}
-
-.launch-btn {
-  position: relative;
-  width: 100%;
-  max-width: 520px;
-  padding: 20px 40px;
-  background: linear-gradient(135deg, #0d2437, #0f3460);
-  border: 1px solid #3b82f6;
-  border-radius: 10px;
-  color: #93c5fd;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: all 0.25s ease;
-  box-shadow: 0 0 20px #3b82f620, inset 0 0 20px #3b82f610;
-  overflow: hidden;
-}
-
-.launch-btn::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, transparent 40%, #3b82f615);
-  pointer-events: none;
-}
-
-.launch-btn:hover:not(:disabled) {
-  border-color: #60a5fa;
-  box-shadow: 0 0 30px #3b82f640, inset 0 0 30px #3b82f618;
-  color: #bfdbfe;
-  transform: translateY(-1px);
-}
-
-.launch-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.85;
-}
-
-.launch-btn.firing {
-  border-color: #f59e0b;
-  box-shadow: 0 0 25px #f59e0b40;
-  color: #fcd34d;
-  animation: fire-pulse 1s ease-in-out infinite;
-}
-
-.launch-btn.done {
-  border-color: #4af0c8;
-  box-shadow: 0 0 25px #4af0c830;
-  color: #4af0c8;
-}
-
-@keyframes fire-pulse {
-  0%, 100% { box-shadow: 0 0 20px #f59e0b30; }
-  50%       { box-shadow: 0 0 40px #f59e0b60; }
-}
-
-.btn-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
-.btn-icon {
-  font-size: 18px;
-}
-
-.spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid #f59e0b40;
-  border-top-color: #f59e0b;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* ===================== 统计面板 ===================== */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-@media (max-width: 700px) {
-  .stats-grid { grid-template-columns: repeat(3, 1fr); }
-}
-
-.stat-item {
-  text-align: center;
-  padding: 12px 8px;
-  background: #0b0f1a;
-  border: 1px solid #1e2940;
-  border-radius: 8px;
-}
-
-.stat-val {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  margin-bottom: 6px;
-}
-
-.stat-val.success  { color: #4af0c8; }
-.stat-val.fail     { color: #f87171; }
-.stat-val.total    { color: #93c5fd; }
-.stat-val.duration { color: #fbbf24; }
-.stat-val.qps      { color: #a78bfa; }
-.stat-val.rate     { color: #4af0c8; }
-.stat-val.rate.danger { color: #f87171; }
-
-.stat-label {
-  font-size: 11px;
-  color: #4a5980;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-/* 进度条 */
-.progress-wrap {
-  width: 100%;
-  height: 6px;
-  background: #0b0f1a;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 6px;
-}
-
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #4af0c8);
-  border-radius: 3px;
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px #4af0c860;
-}
-
-.progress-bar.complete {
-  background: linear-gradient(90deg, #4af0c8, #22d3ee);
-}
-
-.progress-label {
-  font-size: 12px;
-  color: #4a5980;
-  text-align: right;
-}
-
-/* ===================== 日志面板 ===================== */
-.log-card {
-  padding-bottom: 20px;
-}
-
-.log-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.log-header .card-title {
-  margin-bottom: 0;
-}
-
-.clear-btn {
-  font-family: inherit;
-  font-size: 12px;
-  color: #4a5980;
-  background: transparent;
-  border: 1px solid #1e2940;
-  border-radius: 4px;
-  padding: 3px 10px;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
-}
-
-.clear-btn:hover {
-  color: #c9d1e0;
-  border-color: #3a4a6a;
-}
-
-.log-scroll {
-  max-height: 280px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: #1e2940 transparent;
-}
-
-.log-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.log-scroll::-webkit-scrollbar-thumb {
-  background: #1e2940;
-  border-radius: 2px;
-}
-
-.log-line {
-  display: flex;
-  gap: 12px;
-  padding: 4px 0;
-  font-size: 12px;
-  line-height: 1.6;
-  border-bottom: 1px solid #0f172a;
-}
-
-.log-time {
-  color: #2e3f60;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.log-line.info    .log-msg { color: #6b7fa3; }
-.log-line.success .log-msg { color: #4af0c8; }
-.log-line.warn    .log-msg { color: #fbbf24; }
-.log-line.error   .log-msg { color: #f87171; }
-</style>
