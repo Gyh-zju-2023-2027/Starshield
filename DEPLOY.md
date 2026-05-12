@@ -1,6 +1,9 @@
 # StarShield 本地部署说明
 
-面向 macOS / Linux 本地开发，按顺序执行即可。
+面向 macOS / Linux 本地开发。本文分为两部分：
+
+- `基础部署`：后端 + 前端 + 中间件，可完成常规联调
+- `大规模真实评论验证（可选）`：`bilichat-ingest` + `ai-service` 全链路压测
 
 ---
 
@@ -11,6 +14,7 @@
 | JDK 17 | `java -version` |
 | Maven 3.8+ | `mvn -version`（项目可用 Toolchains 固定 JDK 17，见 `.mvn/toolchains.xml`） |
 | Node.js 18+ / npm | `node -v` |
+| Python 3.10+（可选） | `python3 --version`（`ai-service`、`bilichat-ingest` 需要） |
 | MySQL 8 | `mysql --version` |
 | RabbitMQ 3.x | 消息入队与消费 |
 | Redis | **规则控制台**（敏感词 / Prompt）必需 |
@@ -54,7 +58,10 @@ mysql -u root -p starshield < starshield-backend/src/main/resources/seed_chat_me
 
 ## 4. 后端配置与启动
 
-1. 编辑 `starshield-backend/src/main/resources/application.yml`：将 **`spring.datasource.password`** 改为本机 MySQL root 密码；若 RabbitMQ / Redis 非本机默认端口，同步修改对应段。
+1. 编辑 `starshield-backend/src/main/resources/application.yml`：
+   - 将 **`spring.datasource.password`** 改为本机 MySQL 密码
+   - 若 RabbitMQ / Redis 非本机默认端口，同步修改对应段
+   - 若要接入轻量模型服务，设置 `starshield.ai.provider=lightweight`，并配置 `starshield.ai.lightweight-url`
 2. 启动：
 
 ```bash
@@ -68,8 +75,8 @@ mvn spring-boot:run
 **快速自检：**
 
 ```bash
-curl -s http://localhost:8080/api/dashboard/metrics | head -c 200
-# 期望为 JSON，且含 "code":200（需 MySQL 正常、依赖已就绪）
+curl -s http://localhost:8080/api/dashboard/metrics
+# 期望返回 JSON，且含 "code":200（需 MySQL 正常、依赖已就绪）
 ```
 
 ---
@@ -94,7 +101,55 @@ npm run dev
 
 ---
 
-## 7. 常见问题
+## 7. 大规模真实评论验证（可选）
+
+> 目标：使用 `bilichat-ingest` 抓取 B 站评论并推送到 StarShield，验证
+> `MQ → Consumer → 引擎A/B → 落库 → 大屏` 全链路。
+
+### 7.1 启动 ai-service（轻量模型）
+
+```bash
+cd ai-service
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+# 默认使用 5050 端口（与项目报告/脚本一致）
+PORT=5050 .venv/bin/python serve.py
+```
+
+### 7.2 以 lightweight 模式启动后端
+
+```bash
+cd starshield-backend
+STARSHIELD_AI_PROVIDER=lightweight \
+STARSHIELD_AI_LIGHTWEIGHT_URL=http://127.0.0.1:5050/score \
+mvn spring-boot:run
+```
+
+### 7.3 运行 ingest 脚本
+
+```bash
+cd bilichat-ingest
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+
+.venv/bin/python ingest_comments.py \
+  --bvid-file bvids.txt \
+  --target-count 12000 \
+  --rps 50 --workers 16 \
+  -v --log-file run.log
+```
+
+### 7.4 观察链路结果
+
+```bash
+cd bilichat-ingest
+.venv/bin/python verify_pipeline.py --watch
+```
+
+---
+
+## 8. 常见问题
 
 | 现象 | 处理 |
 |------|------|
@@ -102,6 +157,9 @@ npm run dev
 | `Access denied`（MySQL） | 检查 `application.yml` 中用户名、密码、库名 `starshield`。 |
 | `Connection refused :5672` | 启动 RabbitMQ。 |
 | 规则控制台报错 / 无数据 | 启动 **Redis**；未配置时部分接口会失败。 |
+| 大量 `429 Too Many Requests` | 降低 ingest `--rps`；或提高 `starshield.rate-limit.ip-qps`（默认 300）。 |
+| `verify_pipeline` 一直无增量 | 检查后端消费者日志、RabbitMQ 队列积压与死信队列。 |
+| 使用轻量模型但命中率异常低 | 检查 `STARSHIELD_AI_PROVIDER=lightweight` 与 `STARSHIELD_AI_LIGHTWEIGHT_URL` 是否生效。 |
 | 压测成功但库里没数据 | 上传只入队，需 **消费者** 消费成功才落库；看 RabbitMQ 队列是否积压或进死信。 |
 | `Table ... doesn't exist` | 执行 `init.sql`。 |
 | `npm install` 权限错误 | `npm install --cache /tmp/npm-cache` |
@@ -115,6 +173,7 @@ npm run dev
 |------|------|
 | 后端 API | 8080 |
 | 前端（Vite） | 5173 |
+| ai-service（可选） | 5050（可通过 `PORT` 覆盖） |
 | MySQL | 3306 |
 | Redis | 6379 |
 | RabbitMQ AMQP | 5672 |

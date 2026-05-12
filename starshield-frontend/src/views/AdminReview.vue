@@ -158,13 +158,19 @@ async function onBan(row) {
     .catch(() => false)
   if (!ok) return
 
-  const res = await confirmBan(row.id)
-  if (res.code === 200) {
-    ElMessage.success('已确认封禁')
-    await loadData()
-    if (current.value?.id === row.id) {
-      await openDetail(row)
+  try {
+    const res = await confirmBan(row.id)
+    if (res.code === 200) {
+      ElMessage.success('已确认封禁')
+      await loadData()
+      if (current.value?.id === row.id) {
+        await openDetail(row)
+      }
+    } else {
+      ElMessage.error(res?.message || `操作失败 (code=${res?.code})`)
     }
+  } catch (e) {
+    ElMessage.error(`请求失败：${e?.response?.data?.message || e?.message || e}`)
   }
 }
 
@@ -174,13 +180,19 @@ async function onRelease(row) {
     .catch(() => false)
   if (!ok) return
 
-  const res = await releaseRecord(row.id)
-  if (res.code === 200) {
-    ElMessage.success('已解除')
-    await loadData()
-    if (current.value?.id === row.id) {
-      await openDetail(row)
+  try {
+    const res = await releaseRecord(row.id)
+    if (res.code === 200) {
+      ElMessage.success('已解除')
+      await loadData()
+      if (current.value?.id === row.id) {
+        await openDetail(row)
+      }
+    } else {
+      ElMessage.error(res?.message || `操作失败 (code=${res?.code})`)
     }
+  } catch (e) {
+    ElMessage.error(`请求失败：${e?.response?.data?.message || e?.message || e}`)
   }
 }
 

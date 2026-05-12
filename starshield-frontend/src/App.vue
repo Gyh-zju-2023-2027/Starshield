@@ -38,6 +38,7 @@
         <TestMock v-if="tab === 'test'" />
         <AdminReview v-else-if="tab === 'admin'" />
         <DashboardBoard v-else-if="tab === 'dashboard'" />
+        <BanAnalytics v-else-if="tab === 'ban'" />
         <ControlPanel v-else />
       </div>
     </main>
@@ -49,6 +50,7 @@ import { ref } from 'vue'
 import TestMock from './views/TestMock.vue'
 import AdminReview from './views/AdminReview.vue'
 import DashboardBoard from './views/DashboardBoard.vue'
+import BanAnalytics from './views/BanAnalytics.vue'
 import ControlPanel from './views/ControlPanel.vue'
 
 const tab = ref('test')
@@ -57,6 +59,7 @@ const nav = [
   { id: 'test', label: '压测入口', icon: 'rocket_launch' },
   { id: 'admin', label: '审核后台', icon: 'fact_check' },
   { id: 'dashboard', label: '实时大屏', icon: 'monitoring' },
+  { id: 'ban', label: '封禁分析', icon: 'block' },
   { id: 'control', label: '规则控制台', icon: 'tune' }
 ]
 </script>

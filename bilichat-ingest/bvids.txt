@@ -1,0 +1,24 @@
+# BV 号词单（# 开头为注释，空行忽略）
+# 选材建议：评论数 5w+ 的热门视频更容易快速凑够 1w 条
+# 你可以直接打开 https://www.bilibili.com/v/popular/all/ 抄一批 BV 号填到下面
+# 下面给出的是举例，请自行替换为当下评论较多的视频
+
+# ===== 游戏区（与项目语义契合，常出现争议性发言） =====
+BV1GX9aB1EDF
+BV1jMDSBZEJp
+BV1EaZFByEtA
+BV1avQnB6Eye
+BV1rAzPB5EaQ
+BV1kVSQBuED5
+
+# ===== 数码/财经/娱乐（多元话题，凑量并防过拟合） =====
+BV1vGdABTEMY
+BV1S8RdBkEjP
+BV1ZfdFBMEa5
+BV1dydGBKEDB
+
+# ===== 社会/资讯（容易出现激烈言论，给模型上压力） =====
+BV1s6dTBeEM5
+BV1RxdwBBERY
+BV1ooR2BwEym
+BV1TFd3BEEB3

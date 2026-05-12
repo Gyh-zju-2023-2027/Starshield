@@ -71,6 +71,11 @@ ai-service/.venv/
 ai-service/__pycache__/
 ai-service/training_metrics.json
 
+# Python 通用产物
+__pycache__/
+*.pyc
+.venv/
+
 # 仅保留 ai-service 源码与依赖说明
 !ai-service/train.py
 !ai-service/serve.py
