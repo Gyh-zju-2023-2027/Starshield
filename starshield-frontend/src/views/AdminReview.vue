@@ -30,14 +30,6 @@
             <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">refresh</span>
             刷新
           </el-button>
-          <el-button type="danger" plain round :disabled="!selected.length" @click="onBatchBan">
-            <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">block</span>
-            批量封禁
-          </el-button>
-          <el-button type="success" plain round :disabled="!selected.length" @click="onBatchRelease">
-            <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">undo</span>
-            批量解除
-          </el-button>
         </div>
       </div>
 
@@ -54,6 +46,19 @@
         <el-table-column prop="playerId" label="玩家 ID" width="140" />
         <el-table-column prop="riskScore" label="风险分" width="96" />
         <el-table-column prop="labels" label="标签" width="170" />
+        <el-table-column 
+          prop="reasonTag" 
+          label="理由" 
+          width="100"
+          :filters="reasonFilters"
+          :filter-method="filterReason"
+        >
+          <template #default="{ row }">
+            <el-tag v-if="row.reasonTag" :color="getReasonColor(row.reasonTag)" effect="dark" size="small" class="border-none">
+              {{ getReasonLabel(row.reasonTag) }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="content" label="摘要" min-width="300" show-overflow-tooltip />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="scope">
@@ -69,13 +74,53 @@
         </el-table-column>
       </el-table>
 
-      <div class="mt-5 flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.08] bg-slate-950/50 px-5 py-3 text-sm text-slate-400 ring-1 ring-white/[0.04]">
-        <span class="material-symbols-outlined text-xl text-cyan-500/90">checklist</span>
-        <span>已选中 <b class="text-slate-200">{{ selected.length }}</b> 条</span>
-        <span class="text-slate-600">｜</span>
-        <span class="text-xs text-slate-500">双击行或使用操作列进行管理</span>
+      <div v-if="selected.length > 0" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full border border-white/10 bg-slate-900/90 px-6 py-3 shadow-2xl backdrop-blur-md ring-1 ring-white/5">
+        <span class="text-sm font-medium text-slate-300">
+          已选 <b class="text-cyan-400">{{ selected.length }}</b> 条
+        </span>
+        <div class="h-4 w-[1px] bg-white/20"></div>
+        <el-button type="danger" round size="small" @click="openReasonDialog('BLOCK')">
+          批量违规
+        </el-button>
+        <el-button type="success" round size="small" @click="openReasonDialog('PASS')">
+          批量正常
+        </el-button>
+        <el-button type="warning" round size="small" plain @click="openReasonDialog('REVIEW')">
+          加入观察名单
+        </el-button>
       </div>
     </div>
+
+    <el-dialog v-model="reasonDialogVisible" title="选择理由" width="400px" custom-class="!bg-slate-900 !border !border-white/10" destroy-on-close>
+      <div class="flex flex-wrap gap-2 mb-4">
+        <el-button
+          v-for="tag in reasonTags"
+          :key="tag.value"
+          :color="tag.color"
+          :plain="selectedReasonValue !== tag.value"
+          size="small"
+          class="!border-none"
+          @click="selectedReasonValue = tag.value; customReason = ''"
+        >
+          {{ tag.label }}
+        </el-button>
+      </div>
+      <el-input 
+        v-model="customReason" 
+        placeholder="自定义理由..." 
+        size="small" 
+        class="mb-4" 
+        @input="selectedReasonValue = 'custom'"
+      />
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="reasonDialogVisible = false" size="small" plain>取消</el-button>
+          <el-button type="primary" @click="confirmBatchWithReason" size="small" :disabled="!selectedReasonValue && !customReason">
+            确认
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
 
     <el-drawer v-model="drawerVisible" title="审计详情 · Record Detail" size="46%" destroy-on-close>
       <div v-if="current" class="font-sans text-slate-200">
@@ -120,15 +165,77 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { confirmBan, fetchAuditLogs, fetchPending, releaseRecord } from '../api/admin'
+import { confirmBan, fetchAuditLogs, fetchPending, releaseRecord, batchProcess } from '../api/admin'
 
 const rows = ref([])
 const selected = ref([])
 const drawerVisible = ref(false)
 const current = ref(null)
 const auditLogs = ref([])
+
+const reasonDialogVisible = ref(false)
+const selectedReasonValue = ref('')
+const customReason = ref('')
+const currentBatchDecision = ref('')
+
+const reasonTags = [
+  { label: '辱骂', value: 'abuse', color: '#ef4444' },
+  { label: '广告', value: 'ad', color: '#f59e0b' },
+  { label: '涉政', value: 'politics', color: '#b91c1c' },
+  { label: '外挂', value: 'cheat', color: '#8b5cf6' },
+  { label: '刷屏', value: 'spam', color: '#64748b' },
+  { label: '引战', value: 'flame', color: '#f97316' },
+  { label: '色情', value: 'porn', color: '#ec4899' },
+  { label: '隐私', value: 'privacy', color: '#14b8a6' },
+  { label: '诈骗', value: 'scam', color: '#eab308' }
+]
+
+const reasonFilters = computed(() => {
+  return reasonTags.map(t => ({ text: t.label, value: t.value }))
+})
+
+function filterReason(value, row) {
+  return row.reasonTag === value
+}
+
+function getReasonColor(val) {
+  const tag = reasonTags.find(t => t.value === val)
+  return tag ? tag.color : '#334155'
+}
+
+function getReasonLabel(val) {
+  const tag = reasonTags.find(t => t.value === val)
+  return tag ? tag.label : val
+}
+
+function openReasonDialog(decision) {
+  currentBatchDecision.value = decision
+  selectedReasonValue.value = ''
+  customReason.value = ''
+  reasonDialogVisible.value = true
+}
+
+async function confirmBatchWithReason() {
+  const finalReason = selectedReasonValue.value === 'custom' ? customReason.value : (selectedReasonValue.value || customReason.value)
+  const ids = selected.value.map(r => r.id)
+  
+  try {
+    const res = await batchProcess(ids, currentBatchDecision.value, finalReason)
+    if (res.code === 200) {
+      ElMessage.success('批量处理成功')
+    } else if (res.code === 207) {
+      ElMessage.warning('部分记录处理失败')
+    } else {
+      throw new Error(res.message || '批量处理失败')
+    }
+    reasonDialogVisible.value = false
+    await loadData()
+  } catch (e) {
+    ElMessage.error(`请求失败：${e?.response?.data?.message || e?.message || e}`)
+  }
+}
 
 async function loadData() {
   const res = await fetchPending(1, 50)
@@ -193,42 +300,6 @@ async function onRelease(row) {
     }
   } catch (e) {
     ElMessage.error(`请求失败：${e?.response?.data?.message || e?.message || e}`)
-  }
-}
-
-async function onBatchBan() {
-  const snapshot = JSON.parse(JSON.stringify(rows.value))
-  for (const row of selected.value) {
-    row.decision = 'BLOCK'
-  }
-  try {
-    for (const row of selected.value) {
-      const res = await confirmBan(row.id)
-      if (res.code !== 200) throw new Error('批量封禁失败')
-    }
-    ElMessage.success('批量封禁成功')
-    await loadData()
-  } catch (e) {
-    rows.value = snapshot
-    ElMessage.error('批量封禁失败，已回滚')
-  }
-}
-
-async function onBatchRelease() {
-  const snapshot = JSON.parse(JSON.stringify(rows.value))
-  for (const row of selected.value) {
-    row.decision = 'PASS'
-  }
-  try {
-    for (const row of selected.value) {
-      const res = await releaseRecord(row.id)
-      if (res.code !== 200) throw new Error('批量解除失败')
-    }
-    ElMessage.success('批量解除成功')
-    await loadData()
-  } catch (e) {
-    rows.value = snapshot
-    ElMessage.error('批量解除失败，已回滚')
   }
 }
 

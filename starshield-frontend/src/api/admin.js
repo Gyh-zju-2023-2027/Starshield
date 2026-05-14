@@ -31,3 +31,12 @@ export async function releaseRecord(id, operator = 'admin-ui') {
     }
   })
 }
+
+export function batchProcess(ids, decision, reasonTag, operator = 'admin-ui') {
+  return http.post('/admin/moderation/batch', {
+    ids,
+    decision,
+    reasonTag,
+    operator
+  })
+}

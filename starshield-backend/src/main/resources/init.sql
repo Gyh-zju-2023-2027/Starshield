@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS `chat_message_log`
     `labels`             VARCHAR(255)          DEFAULT NULL COMMENT '标签（逗号分隔）',
     `hit_words`          VARCHAR(255)          DEFAULT NULL COMMENT '命中词（逗号分隔）',
     `ai_analysis_result` TEXT                  DEFAULT NULL COMMENT 'AI大模型分析结果JSON串，初始为空，待异步填充',
+    `reason_tag`         VARCHAR(32)           DEFAULT NULL COMMENT '快捷理由标签',
     `create_time`        DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '记录创建时间（精确到毫秒）',
     PRIMARY KEY (`id`),
     -- 按平台查询的索引
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS `moderation_audit_log`
     `after_decision`    VARCHAR(16)          DEFAULT NULL COMMENT '操作后决策',
     `before_risk_score` INT                  DEFAULT NULL COMMENT '操作前风险分',
     `after_risk_score`  INT                  DEFAULT NULL COMMENT '操作后风险分',
+    `reason_tag`        VARCHAR(32)          DEFAULT NULL COMMENT '快捷理由标签',
     `create_time`       DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '操作时间',
     PRIMARY KEY (`id`),
     INDEX `idx_message_id` (`message_id`),

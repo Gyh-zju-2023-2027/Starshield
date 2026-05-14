@@ -36,5 +36,7 @@ public class ModerationAuditLog implements Serializable {
 
     private Integer afterRiskScore;
 
+    private String reasonTag;
+
     private LocalDateTime createTime;
 }

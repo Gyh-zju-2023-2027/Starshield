@@ -84,4 +84,9 @@ public class ChatMessageLog implements Serializable {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "Asia/Shanghai")
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
+
+    /**
+     * 快捷理由标签
+     */
+    private String reasonTag;
 }

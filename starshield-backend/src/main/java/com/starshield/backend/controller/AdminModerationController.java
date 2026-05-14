@@ -57,9 +57,10 @@ public class AdminModerationController {
      */
     @GetMapping("/{id}/audit-logs")
     public Result<List<ModerationAuditLog>> auditLogs(@PathVariable Long id,
-                                                       @RequestParam(defaultValue = "20") Integer limit) {
+                                                      @RequestParam(required = false) String reasonTag,
+                                                      @RequestParam(defaultValue = "20") Integer limit) {
         int size = Math.max(1, Math.min(100, limit));
-        return Result.success(adminReviewService.queryAuditLogs(id, size));
+        return Result.success(adminReviewService.queryAuditLogs(id, reasonTag, size));
     }
 
     /**
@@ -94,5 +95,39 @@ public class AdminModerationController {
         String operator = body == null ? "system" : body.getOrDefault("operator", "system");
         boolean ok = adminReviewService.release(id, operator);
         return ok ? Result.success("已解除封禁", null) : Result.error(404, "记录不存在");
+    }
+
+    /**
+     * 批量处理请求体
+     */
+    public static class BatchReq {
+        public List<Long> ids;
+        public String decision;
+        public String reasonTag;
+        public String operator;
+    }
+
+    /**
+     * 批量处理。
+     *
+     * @author AI (under P5 supervision)
+     */
+    @PostMapping("/batch")
+    public Result<Map<Long, String>> batchProcess(@RequestBody BatchReq req) {
+        if (req.ids == null || req.ids.isEmpty()) {
+            return Result.error(400, "记录ID列表不能为空");
+        }
+        if (!"BLOCK".equals(req.decision) && !"PASS".equals(req.decision) && !"REVIEW".equals(req.decision)) {
+            return Result.error(400, "无效的决策类型");
+        }
+        String operator = req.operator == null || req.operator.isBlank() ? "system" : req.operator;
+        Map<Long, String> failures = adminReviewService.batchProcess(req.ids, req.decision, req.reasonTag, operator);
+        if (failures.isEmpty()) {
+            return Result.success("批量处理成功", failures);
+        } else {
+            Result<Map<Long, String>> res = Result.error(207, "部分或全部处理失败");
+            res.setData(failures);
+            return res;
+        }
     }
 }
