@@ -14,7 +14,7 @@
       </div>
       <div class="header-right">
         <span class="ws-indicator" :class="{ online: !loading }">
-          {{ loading ? '加载中…' : `已加载 ${blocked.length} 条` }}
+          {{ loading ? '加载中…' : statusText }}
         </span>
         <el-button type="primary" class="dash-refresh" :loading="loading" @click="loadData">刷新</el-button>
       </div>
@@ -41,6 +41,18 @@
 
     <section class="analysis-grid">
       <div class="panel">
+        <h3>平台分布 · ES Terms</h3>
+        <div ref="platformChartRef" class="mini-chart"></div>
+        <p v-if="!platformDistribution.length && !loading" class="word-empty">暂无平台聚合数据</p>
+      </div>
+
+      <div class="panel">
+        <h3>封禁趋势 · ES Date Histogram</h3>
+        <div ref="trendChartRef" class="mini-chart"></div>
+        <p v-if="!timeTrend.length && !loading" class="word-empty">暂无趋势聚合数据</p>
+      </div>
+
+      <div class="panel">
         <h3>封禁消息热词云（命中词 + 内容）</h3>
         <div class="word-cloud">
           <span
@@ -66,11 +78,11 @@
 
     <section class="stream-panel">
       <div class="stream-head">
-        <h3>所有封禁消息（共 {{ blocked.length }} 条）</h3>
+        <h3>{{ listTitle }}</h3>
         <div class="stream-tools">
           <el-input
             v-model="filterText"
-            placeholder="按玩家 ID / 内容 / 命中词过滤"
+            placeholder="输入关键词，展示 ES <mark> 高亮片段"
             clearable
             size="small"
             class="filter-input"
@@ -91,7 +103,12 @@
           :key="item.id"
         >
           <span class="col-id" :title="item.playerId">{{ item.playerId }}</span>
-          <span class="col-content" :title="item.content">{{ item.content }}</span>
+          <span
+            class="col-content"
+            :class="{ 'col-content--highlight': searchMode }"
+            :title="item.content"
+            v-html="renderContent(item)"
+          />
           <span class="col-hit">
             <span v-if="item.hitWords" class="hit-chip">{{ item.hitWords }}</span>
             <span v-else class="muted">—</span>
@@ -101,9 +118,10 @@
           </span>
           <span class="col-time">{{ formatTime(item.createTime) }}</span>
         </div>
-        <div v-if="!filteredList.length && !loading" class="empty-row">
+        <div v-if="!filteredList.length && !loading && !highlightLoading" class="empty-row">
           没有匹配的封禁消息
         </div>
+        <div v-if="highlightLoading" class="empty-row">正在检索高亮片段…</div>
       </div>
     </section>
   </div>
@@ -112,20 +130,34 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
-import { searchBlockedMessages } from '../api/archive'
+import {
+  analyzeBlockedMessages,
+  searchBlockedMessages,
+  searchBlockedMessagesWithHighlight
+} from '../api/archive'
 
 const REFRESH_INTERVAL_MS = 15000
 const FETCH_LIMIT = 500
+const HIGHLIGHT_LIMIT = 100
 const RANK_TOP_N = 10
 
 const blocked = ref([])
+const highlightRows = ref([])
+const archiveAnalysis = ref(null)
 const loading = ref(false)
+const highlightLoading = ref(false)
 const filterText = ref('')
 const rankChartRef = ref(null)
+const platformChartRef = ref(null)
+const trendChartRef = ref(null)
 const rankTopN = ref(RANK_TOP_N)
 
 let rankChart = null
+let platformChart = null
+let trendChart = null
 let timer = null
+let highlightTimer = null
+let highlightRequestSeq = 0
 let unmounted = false
 
 const STOP_WORDS = new Set([
@@ -211,8 +243,48 @@ const avgRiskScore = computed(() => {
   return Math.round(sum / scores.length)
 })
 
+const platformDistribution = computed(() => {
+  const source = archiveAnalysis.value?.platformDistribution || {}
+  return Object.entries(source)
+    .map(([platform, count]) => ({ platform, count: Number(count || 0) }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+})
+
+const timeTrend = computed(() => {
+  const source = Array.isArray(archiveAnalysis.value?.timeTrend)
+    ? archiveAnalysis.value.timeTrend
+    : []
+  return source
+    .map((item) => ({
+      time: String(item?.time || ''),
+      count: Number(item?.count || 0)
+    }))
+    .filter((item) => item.time && item.count >= 0)
+})
+
+const searchMode = computed(() => filterText.value.trim().length > 0)
+
+const listTitle = computed(() => {
+  if (!searchMode.value) {
+    return `所有封禁消息（共 ${blocked.value.length} 条）`
+  }
+  return `高亮检索结果（共 ${highlightRows.value.length} 条）`
+})
+
+const statusText = computed(() => {
+  if (highlightLoading.value) {
+    return '高亮检索中…'
+  }
+  if (searchMode.value) {
+    return `命中 ${highlightRows.value.length} 条`
+  }
+  return `已加载 ${blocked.value.length} 条`
+})
+
 const filteredList = computed(() => {
   const kw = filterText.value.trim().toLowerCase()
+  if (searchMode.value) return highlightRows.value
   if (!kw) return blocked.value
   return blocked.value.filter((item) => {
     return (
@@ -222,6 +294,37 @@ const filteredList = computed(() => {
     )
   })
 })
+
+function normalizeHighlightRow(row) {
+  const message = row?.message || {}
+  return {
+    ...message,
+    highlightContent: row?.highlightContent || message.content || '',
+    highlights: row?.highlights || {}
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sanitizeHighlight(value) {
+  return escapeHtml(value)
+    .replace(/&lt;mark&gt;/g, '<mark>')
+    .replace(/&lt;\/mark&gt;/g, '</mark>')
+}
+
+function renderContent(item) {
+  if (searchMode.value) {
+    return sanitizeHighlight(item?.highlightContent || item?.content)
+  }
+  return escapeHtml(item?.content)
+}
 
 function wordStyle(item, idx) {
   const count = Number(item?.count || 0)
@@ -239,7 +342,7 @@ function formatTime(value) {
   if (!value) return '—'
   if (typeof value === 'string') return value
   try {
-    const d = new Date(value)
+    const d = parseDateTime(value)
     if (Number.isNaN(d.getTime())) return String(value)
     const pad = (n) => String(n).padStart(2, '0')
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
@@ -250,10 +353,28 @@ function formatTime(value) {
   }
 }
 
+function parseDateTime(value) {
+  if (!value) return new Date(0)
+  if (value instanceof Date) return value
+  return new Date(String(value).replace(' ', 'T'))
+}
+
 function initRankChart() {
   if (!rankChartRef.value) return
   rankChart = echarts.init(rankChartRef.value)
   renderRankChart()
+}
+
+function initPlatformChart() {
+  if (!platformChartRef.value) return
+  platformChart = echarts.init(platformChartRef.value)
+  renderPlatformChart()
+}
+
+function initTrendChart() {
+  if (!trendChartRef.value) return
+  trendChart = echarts.init(trendChartRef.value)
+  renderTrendChart()
 }
 
 function renderRankChart() {
@@ -314,18 +435,101 @@ function renderRankChart() {
   })
 }
 
+function renderPlatformChart() {
+  if (!platformChart) return
+  const data = platformDistribution.value
+  platformChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: 'rgba(15,23,42,0.92)',
+      borderColor: '#334155',
+      textStyle: { color: '#e2e8f0' }
+    },
+    legend: {
+      bottom: 0,
+      textStyle: { color: '#94a3b8', fontSize: 11 }
+    },
+    series: [
+      {
+        type: 'pie',
+        radius: ['45%', '72%'],
+        center: ['50%', '44%'],
+        data: data.map((item) => ({ name: item.platform, value: item.count })),
+        label: {
+          color: '#cbd5f5',
+          formatter: '{b}\n{c}'
+        },
+        itemStyle: {
+          borderColor: '#020617',
+          borderWidth: 2
+        },
+        color: ['#fb7185', '#f97316', '#38bdf8', '#a78bfa', '#22c55e', '#facc15']
+      }
+    ]
+  })
+}
+
+function renderTrendChart() {
+  if (!trendChart) return
+  const data = timeTrend.value
+  trendChart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(15,23,42,0.92)',
+      borderColor: '#334155',
+      textStyle: { color: '#e2e8f0' }
+    },
+    grid: { left: 42, right: 18, top: 22, bottom: 42 },
+    xAxis: {
+      type: 'category',
+      data: data.map((item) => item.time),
+      axisLine: { lineStyle: { color: '#334155' } },
+      axisLabel: { color: '#94a3b8', rotate: data.length > 6 ? 30 : 0 }
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLine: { lineStyle: { color: '#334155' } },
+      splitLine: { lineStyle: { color: '#1e293b' } },
+      axisLabel: { color: '#94a3b8' }
+    },
+    series: [
+      {
+        type: 'line',
+        smooth: true,
+        symbolSize: 7,
+        data: data.map((item) => item.count),
+        lineStyle: { width: 3, color: '#fb7185' },
+        itemStyle: { color: '#f97316' },
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(251, 113, 133, 0.32)' },
+            { offset: 1, color: 'rgba(251, 113, 133, 0.02)' }
+          ])
+        }
+      }
+    ]
+  })
+}
+
 async function loadData() {
   if (loading.value) return
   loading.value = true
   try {
-    const res = await searchBlockedMessages(FETCH_LIMIT)
+    const [res, analysisRes] = await Promise.all([
+      searchBlockedMessages(FETCH_LIMIT),
+      analyzeBlockedMessages(10)
+    ])
     const list = Array.isArray(res?.data) ? res.data : []
     list.sort((a, b) => {
-      const ta = a?.createTime ? new Date(a.createTime).getTime() : 0
-      const tb = b?.createTime ? new Date(b.createTime).getTime() : 0
+      const ta = a?.createTime ? parseDateTime(a.createTime).getTime() : 0
+      const tb = b?.createTime ? parseDateTime(b.createTime).getTime() : 0
       return tb - ta
     })
     blocked.value = list
+    archiveAnalysis.value = analysisRes?.data || null
   } catch (_) {
     // 静默失败，保留上次数据
   } finally {
@@ -333,16 +537,78 @@ async function loadData() {
   }
 }
 
+async function loadHighlightData(keyword) {
+  const normalizedKeyword = keyword.trim()
+  const requestSeq = ++highlightRequestSeq
+
+  if (!normalizedKeyword) {
+    highlightRows.value = []
+    highlightLoading.value = false
+    return
+  }
+
+  highlightLoading.value = true
+  try {
+    const res = await searchBlockedMessagesWithHighlight(normalizedKeyword, HIGHLIGHT_LIMIT)
+    if (requestSeq !== highlightRequestSeq) return
+    const rows = Array.isArray(res?.data) ? res.data : []
+    highlightRows.value = rows.map(normalizeHighlightRow).sort((a, b) => {
+      const ta = a?.createTime ? parseDateTime(a.createTime).getTime() : 0
+      const tb = b?.createTime ? parseDateTime(b.createTime).getTime() : 0
+      return tb - ta
+    })
+  } catch (_) {
+    if (requestSeq === highlightRequestSeq) {
+      highlightRows.value = []
+    }
+  } finally {
+    if (requestSeq === highlightRequestSeq) {
+      highlightLoading.value = false
+    }
+  }
+}
+
 function resizeChart() {
   if (rankChart) rankChart.resize()
+  if (platformChart) platformChart.resize()
+  if (trendChart) trendChart.resize()
 }
 
 watch(playerRank, () => {
   renderRankChart()
 })
 
+watch(platformDistribution, () => {
+  renderPlatformChart()
+})
+
+watch(timeTrend, () => {
+  renderTrendChart()
+})
+
+watch(filterText, (value) => {
+  if (highlightTimer) {
+    clearTimeout(highlightTimer)
+    highlightTimer = null
+  }
+
+  const keyword = value.trim()
+  if (!keyword) {
+    highlightRequestSeq += 1
+    highlightRows.value = []
+    highlightLoading.value = false
+    return
+  }
+
+  highlightTimer = setTimeout(() => {
+    loadHighlightData(keyword)
+  }, 260)
+})
+
 onMounted(async () => {
   await nextTick()
+  initPlatformChart()
+  initTrendChart()
   initRankChart()
   await loadData()
   timer = setInterval(() => {
@@ -354,9 +620,18 @@ onMounted(async () => {
 onUnmounted(() => {
   unmounted = true
   if (timer) clearInterval(timer)
+  if (highlightTimer) clearTimeout(highlightTimer)
   if (rankChart) {
     rankChart.dispose()
     rankChart = null
+  }
+  if (platformChart) {
+    platformChart.dispose()
+    platformChart = null
+  }
+  if (trendChart) {
+    trendChart.dispose()
+    trendChart = null
   }
   window.removeEventListener('resize', resizeChart)
 })
@@ -624,6 +899,10 @@ onUnmounted(() => {
   height: 280px;
 }
 
+.mini-chart {
+  height: 280px;
+}
+
 .stream-panel {
   margin-top: 16px;
   border-radius: 18px;
@@ -721,6 +1000,19 @@ onUnmounted(() => {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.col-content--highlight {
+  color: #dbeafe;
+}
+
+.col-content :deep(mark) {
+  display: inline;
+  border-radius: 4px;
+  padding: 0 2px;
+  background: rgba(250, 204, 21, 0.26);
+  color: #fde68a;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.14);
 }
 
 .col-hit {

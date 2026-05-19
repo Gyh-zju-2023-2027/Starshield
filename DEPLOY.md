@@ -179,3 +179,179 @@ cd bilichat-ingest
 | RabbitMQ AMQP | 5672 |
 | RabbitMQ 管理页 | 15672 |
 | Elasticsearch（可选） | 9200 |
+
+---
+
+## 附录：启用 P6 Elasticsearch 归档检索
+
+默认配置下 `starshield.archive.es-enabled=false`，归档检索走 MySQL 兜底。若要测试 P6 的 ES 检索、聚合分析与双写链路：
+
+### 1. 启动 Elasticsearch 8.x
+
+无需 Docker。推荐使用 Elasticsearch 官方 `.tar.gz` 归档包启动一个本地单节点 ES 8.x，配置关闭安全认证，方便本地联调。
+
+**1.1 下载并解压 Elasticsearch 8.12.2**
+
+Apple Silicon（M1/M2/M3）Mac：
+
+```bash
+mkdir -p .local
+cd .local
+
+curl -LO https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-aarch64.tar.gz
+tar -xzf elasticsearch-8.12.2-darwin-aarch64.tar.gz
+cd ..
+```
+
+如果 `curl` 下载很慢，可以中断后使用 `aria2` 多连接断点续传：
+
+```bash
+brew install aria2
+
+cd .local
+aria2c -c -x 16 -s 16 -k 1M \
+  -o elasticsearch-8.12.2-darwin-aarch64.tar.gz \
+  https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-aarch64.tar.gz
+tar -xzf elasticsearch-8.12.2-darwin-aarch64.tar.gz
+cd ..
+```
+
+Intel Mac：
+
+```bash
+mkdir -p .local
+cd .local
+
+curl -LO https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-x86_64.tar.gz
+tar -xzf elasticsearch-8.12.2-darwin-x86_64.tar.gz
+cd ..
+```
+
+Intel Mac 的 `aria2` 加速下载命令：
+
+```bash
+brew install aria2
+
+cd .local
+aria2c -c -x 16 -s 16 -k 1M \
+  -o elasticsearch-8.12.2-darwin-x86_64.tar.gz \
+  https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-x86_64.tar.gz
+tar -xzf elasticsearch-8.12.2-darwin-x86_64.tar.gz
+cd ..
+```
+
+说明：`brew install elasticsearch` 已不适合作为本项目安装方式；Homebrew core 中没有可用的 `elasticsearch` formula，Elastic 官方 Homebrew tap 也主要用于 Elastic Stack 旧式 Homebrew 安装，不如本地归档包方式可控。
+
+**1.2 启动本地单节点 ES**
+
+Elasticsearch 自带兼容 JDK，通常不需要额外安装 Java。首次启动会比较慢，保持该终端不要关闭：
+
+```bash
+ES_JAVA_OPTS="-Xms1g -Xmx1g" \
+.local/elasticsearch-8.12.2/bin/elasticsearch \
+  -E discovery.type=single-node \
+  -E xpack.security.enabled=false
+```
+
+如果提示 macOS 安全拦截，可在“系统设置 → 隐私与安全性”中允许该程序，或对解压目录执行：
+
+```bash
+xattr -dr com.apple.quarantine .local/elasticsearch-8.12.2
+```
+
+**1.3 验证 ES 是否可访问**
+
+另开一个终端，在仓库根目录执行：
+
+```bash
+curl http://localhost:9200
+```
+
+期望能看到类似以下 JSON，且包含 `version.number`：
+
+```json
+{
+  "name": "...",
+  "cluster_name": "docker-cluster",
+  "version": {
+    "number": "8.12.2"
+  }
+}
+```
+
+如果提示 `Failed to connect to localhost port 9200`，说明 ES 还没有启动完成，等待几秒后重试；如果仍失败，回到 ES 启动终端查看错误日志。
+
+如果本机磁盘剩余空间较少，ES 可能因为默认磁盘水位线不分配 shard。仅用于本地测试时，可以把水位线临时调低到 5GB 左右：
+
+```bash
+curl -X PUT "http://localhost:9200/_cluster/settings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transient": {
+      "cluster.routing.allocation.disk.watermark.low": "10gb",
+      "cluster.routing.allocation.disk.watermark.high": "5gb",
+      "cluster.routing.allocation.disk.watermark.flood_stage": "1gb"
+    }
+  }'
+
+curl -X POST "http://localhost:9200/_cluster/reroute?retry_failed=true"
+```
+
+### 2. 创建归档索引和别名
+
+在仓库根目录执行：
+
+```bash
+bash scripts/init-es-archive-index.sh
+```
+
+该脚本会创建物理索引 `chat_message_archive_v1`，并绑定读写别名 `chat_message_archive`。默认使用不依赖 IK 插件的本地测试 Mapping：`chat_message_archive_v1_mapping_standard.json`。
+
+如果本机已经存在名为 `chat_message_archive` 的物理索引，脚本会直接复用该索引作为归档索引；ES 不允许同名索引和同名别名同时存在。
+
+如果你的 ES 已安装匹配版本的 IK 分词插件，可以改用 IK Mapping：
+
+```bash
+MAPPING_FILE=starshield-backend/src/main/resources/es/chat_message_archive_v1_mapping.json \
+bash scripts/init-es-archive-index.sh
+```
+
+验证别名：
+
+```bash
+curl -s "http://localhost:9200/_cat/aliases/chat_message_archive?v"
+```
+
+如果复用了 `chat_message_archive` 物理索引，则用下面命令验证索引：
+
+```bash
+curl -s "http://localhost:9200/chat_message_archive/_count"
+```
+
+可选：如果 ES 不在默认地址，用 `ES_URL` 指定：
+
+```bash
+ES_URL=http://127.0.0.1:9200 bash scripts/init-es-archive-index.sh
+```
+
+### 3. 启用后端 ES 路径
+
+然后编辑 `starshield-backend/src/main/resources/application.yml`：
+
+```yaml
+starshield:
+  archive:
+    es-enabled: true
+```
+
+启动后端后，可用以下接口验证：
+
+```bash
+# 可选：如果先通过 seed_chat_message_1000.sql 导入了 MySQL 测试数据，先回填到 ES
+curl -X POST "http://localhost:8080/api/archive/reindex?batchSize=500&maxRows=1000"
+
+curl -s "http://localhost:8080/api/archive/search?decision=BLOCK&limit=10"
+curl -s "http://localhost:8080/api/archive/analysis?decision=BLOCK&topHitLimit=5"
+```
+
+后端日志出现 `path=ES` 表示命中 ES 路径；出现 `path=MYSQL` 表示 ES 未启用或查询失败，系统正在临时降级。
