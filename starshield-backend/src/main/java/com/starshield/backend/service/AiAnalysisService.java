@@ -101,6 +101,39 @@ public class AiAnalysisService {
         return callDeepSeekForFinalDecision(text, score);
     }
 
+    /**
+     * 生成每日数据战报的 AI 总结
+     */
+    public String generateDailySummary(String statsJson) {
+        String apiKey = resolveApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            return "由于本地未配置大模型 API Key（DEEPSEEK_API_KEY），无法生成智能总结。";
+        }
+        String prompt = "你是游戏安全运营专家。请根据以下各项违规数据和日志，生成一段简短、专业的每日治理总结，字数控制在100-200字即可（纯文本，不要Markdown，不要返回JSON）。";
+        Map<String, Object> requestBody = Map.of(
+                "model", "deepseek-chat",
+                "temperature", 0.7,
+                "messages", new Object[]{
+                        Map.of("role", "system", "content", prompt),
+                        Map.of("role", "user", "content", "今日数据概览: " + statsJson)
+                }
+        );
+        try {
+            String response = restClient.post()
+                    .uri(resolveDeepseekUrl())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = objectMapper.readTree(response);
+            return root.path("choices").path(0).path("message").path("content").asText("").trim();
+        } catch (Exception e) {
+            log.warn("[AI分析] 生成每日总结网络请求失败", e);
+            return "AI 服务暂不可用，无法生成总结。";
+        }
+    }
+
     private AiModerationResult buildLightweightResult(String decision,
                                                       double score,
                                                       String labels,

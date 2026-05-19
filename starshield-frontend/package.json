@@ -13,6 +13,7 @@
     "axios": "^1.6.8",
     "echarts": "^5.5.1",
     "element-plus": "^2.7.2",
+    "html2pdf.js": "^0.14.0",
     "vue": "^3.4.21"
   },
   "devDependencies": {

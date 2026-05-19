@@ -39,6 +39,7 @@
         <AdminReview v-else-if="tab === 'admin'" />
         <DashboardBoard v-else-if="tab === 'dashboard'" />
         <BanAnalytics v-else-if="tab === 'ban'" />
+        <DailyReport v-else-if="tab === 'report'" />
         <ControlPanel v-else />
       </div>
     </main>
@@ -52,6 +53,7 @@ import AdminReview from './views/AdminReview.vue'
 import DashboardBoard from './views/DashboardBoard.vue'
 import BanAnalytics from './views/BanAnalytics.vue'
 import ControlPanel from './views/ControlPanel.vue'
+import DailyReport from './views/DailyReport.vue'
 
 const tab = ref('test')
 
@@ -60,7 +62,8 @@ const nav = [
   { id: 'admin', label: '审核后台', icon: 'fact_check' },
   { id: 'dashboard', label: '实时大屏', icon: 'monitoring' },
   { id: 'ban', label: '封禁分析', icon: 'block' },
-  { id: 'control', label: '规则控制台', icon: 'tune' }
+  { id: 'control', label: '规则控制台', icon: 'tune' },
+  { id: 'report', label: '每日战报', icon: 'summarize' }
 ]
 </script>
 
