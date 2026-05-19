@@ -3,13 +3,19 @@ package com.starshield.backend.service;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.CalendarInterval;
+import co.elastic.clients.elasticsearch._types.aggregations.DateHistogramBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
+import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.starshield.backend.dto.ArchiveSearchHit;
 import com.starshield.backend.entity.ChatMessageLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,8 +26,12 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -51,7 +61,7 @@ public class ArchiveSearchService {
     /**
      * 组合检索。
      *
-     * @author AI (under P6 supervision)
+     * @author AI (under P6_ES_Search supervision)
      */
     public List<ChatMessageLog> search(String keyword,
                                        String playerId,
@@ -77,6 +87,74 @@ public class ArchiveSearchService {
         List<ChatMessageLog> results = searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
         log.info("[ArchiveSearch] path=MYSQL page={} limit={} keyword={} playerId={} hits={}",
                 pageNo, pageSize, keyword, playerId, results.size());
+        return results;
+    }
+
+    /**
+     * 组合检索，并返回 ES 高亮片段。
+     *
+     * @author AI (under P6_ES_Search supervision)
+     */
+    public List<ArchiveSearchHit> searchWithHighlight(String keyword,
+                                                      String playerId,
+                                                      String decision,
+                                                      String labels,
+                                                      LocalDateTime startTime,
+                                                      LocalDateTime endTime,
+                                                      Integer page,
+                                                      Integer limit) {
+        int pageNo = Math.max(1, page == null ? 1 : page);
+        int pageSize = Math.max(1, Math.min(1000, limit == null ? 200 : limit));
+
+        if (esEnabled && elasticsearchClient != null) {
+            try {
+                List<ArchiveSearchHit> results = searchWithHighlightFromEs(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize);
+                log.info("[ArchiveSearchHighlight] path=ES page={} limit={} keyword={} playerId={} hits={}",
+                        pageNo, pageSize, keyword, playerId, results.size());
+                return results;
+            } catch (Exception e) {
+                log.warn("[ArchiveSearchHighlight] ES query failed, fallback to MySQL. page={}, limit={}", pageNo, pageSize, e);
+            }
+        }
+
+        List<ArchiveSearchHit> results = searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, pageNo, pageSize).stream()
+                .map(message -> new ArchiveSearchHit()
+                        .setMessage(message)
+                        .setHighlightContent(message.getContent()))
+                .collect(Collectors.toList());
+        log.info("[ArchiveSearchHighlight] path=MYSQL page={} limit={} keyword={} playerId={} hits={}",
+                pageNo, pageSize, keyword, playerId, results.size());
+        return results;
+    }
+
+    /**
+     * 归档聚合分析。
+     *
+     * @author AI (under P6_ES_Search supervision)
+     */
+    public Map<String, Object> analyze(String keyword,
+                                       String playerId,
+                                       String decision,
+                                       String labels,
+                                       LocalDateTime startTime,
+                                       LocalDateTime endTime,
+                                       Integer topHitLimit) {
+        int topSize = Math.max(1, Math.min(20, topHitLimit == null ? 5 : topHitLimit));
+
+        if (esEnabled && elasticsearchClient != null) {
+            try {
+                Map<String, Object> results = analyzeFromEs(keyword, playerId, decision, labels, startTime, endTime, topSize);
+                log.info("[ArchiveAnalyze] path=ES keyword={} playerId={} topHits={}",
+                        keyword, playerId, topSize);
+                return results;
+            } catch (Exception e) {
+                log.warn("[ArchiveAnalyze] ES aggregation failed, fallback to MySQL. topHits={}", topSize, e);
+            }
+        }
+
+        Map<String, Object> results = analyzeFromMysql(keyword, playerId, decision, labels, startTime, endTime, topSize);
+        log.info("[ArchiveAnalyze] path=MYSQL keyword={} playerId={} topHits={}",
+                keyword, playerId, topSize);
         return results;
     }
 
@@ -123,8 +201,61 @@ public class ArchiveSearchService {
         }
 
         return response.hits().hits().stream()
-            .map(co.elastic.clients.elasticsearch.core.search.Hit::source)
-            .map(this::toChatLog)
+                .map(Hit::source)
+                .map(this::toChatLog)
+                .collect(Collectors.toList());
+    }
+
+    private List<ArchiveSearchHit> searchWithHighlightFromEs(String keyword,
+                                                             String playerId,
+                                                             String decision,
+                                                             String labels,
+                                                             LocalDateTime startTime,
+                                                             LocalDateTime endTime,
+                                                             int page,
+                                                             int size) throws IOException {
+        Query query = buildEsQuery(keyword, playerId, decision, labels, startTime, endTime);
+        List<FieldValue> searchAfter = null;
+        SearchResponse<JsonNode> response = null;
+
+        for (int currentPage = 1; currentPage <= page; currentPage++) {
+            SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
+                    .index(ARCHIVE_INDEX)
+                    .query(query)
+                    .size(size)
+                    .sort(sort -> sort.field(field -> field.field("create_time").order(SortOrder.Desc)))
+                    .sort(sort -> sort.field(field -> field.field(ARCHIVE_ID_SORT_FIELD).order(SortOrder.Desc)))
+                    .highlight(highlight -> highlight
+                            .preTags("<mark>")
+                            .postTags("</mark>")
+                            .fields("content", field -> field.numberOfFragments(0))
+                            .fields("hit_words", field -> field.numberOfFragments(0))
+                            .fields("labels", field -> field.numberOfFragments(0)));
+
+            if (searchAfter != null && !searchAfter.isEmpty()) {
+                requestBuilder.searchAfter(searchAfter);
+            }
+
+            response = elasticsearchClient.search(requestBuilder.build(), JsonNode.class);
+            List<Hit<JsonNode>> hits = response.hits().hits();
+            if (hits.isEmpty()) {
+                return Collections.emptyList();
+            }
+
+            if (currentPage < page) {
+                searchAfter = hits.get(hits.size() - 1).sort();
+                if (searchAfter == null || searchAfter.isEmpty()) {
+                    return Collections.emptyList();
+                }
+            }
+        }
+
+        if (response == null) {
+            return Collections.emptyList();
+        }
+
+        return response.hits().hits().stream()
+                .map(this::toArchiveSearchHit)
                 .collect(Collectors.toList());
     }
 
@@ -149,6 +280,121 @@ public class ArchiveSearchService {
         return chatMessageService.list(query);
     }
 
+    private Map<String, Object> analyzeFromEs(String keyword,
+                                              String playerId,
+                                              String decision,
+                                              String labels,
+                                              LocalDateTime startTime,
+                                              LocalDateTime endTime,
+                                              int topSize) throws IOException {
+        Query query = buildEsQuery(keyword, playerId, decision, labels, startTime, endTime);
+
+        SearchResponse<JsonNode> aggregationResponse = elasticsearchClient.search(request -> request
+                .index(ARCHIVE_INDEX)
+                .query(query)
+                .size(0)
+                .aggregations("platform_distribution", aggregation -> aggregation
+                        .terms(terms -> terms.field("platform.keyword").size(20)))
+                .aggregations("time_trend", aggregation -> aggregation
+                        .dateHistogram(histogram -> histogram
+                                .field("create_time")
+                                .calendarInterval(CalendarInterval.Day)
+                                .minDocCount(1)
+                                .format("yyyy-MM-dd"))),
+                JsonNode.class);
+
+        SearchResponse<JsonNode> topHitsResponse = elasticsearchClient.search(request -> request
+                .index(ARCHIVE_INDEX)
+                .query(query)
+                .size(topSize)
+                .sort(sort -> sort.field(field -> field.field("risk_score").order(SortOrder.Desc)))
+                .sort(sort -> sort.field(field -> field.field("create_time").order(SortOrder.Desc)))
+                .sort(sort -> sort.field(field -> field.field(ARCHIVE_ID_SORT_FIELD).order(SortOrder.Desc))),
+                JsonNode.class);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("platformDistribution", extractPlatformDistribution(aggregationResponse.aggregations().get("platform_distribution")));
+        result.put("timeTrend", extractTimeTrend(aggregationResponse.aggregations().get("time_trend")));
+        result.put("topHits", topHitsResponse.hits().hits().stream()
+                .map(Hit::source)
+                .map(this::toChatLog)
+                .collect(Collectors.toList()));
+        return result;
+    }
+
+    private Map<String, Object> analyzeFromMysql(String keyword,
+                                                 String playerId,
+                                                 String decision,
+                                                 String labels,
+                                                 LocalDateTime startTime,
+                                                 LocalDateTime endTime,
+                                                 int topSize) {
+        List<ChatMessageLog> sample = searchFromMysql(keyword, playerId, decision, labels, startTime, endTime, 1, 1000);
+
+        Map<String, Long> platformDistribution = sample.stream()
+                .collect(Collectors.groupingBy(
+                        item -> item.getPlatform() == null ? "UNKNOWN" : item.getPlatform(),
+                        LinkedHashMap::new,
+                        Collectors.counting()));
+
+        DateTimeFormatter dayFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+        Map<String, Long> timeTrend = sample.stream()
+                .filter(item -> item.getCreateTime() != null)
+                .collect(Collectors.groupingBy(
+                        item -> item.getCreateTime().format(dayFormatter),
+                        LinkedHashMap::new,
+                        Collectors.counting()));
+
+        List<ChatMessageLog> topHits = sample.stream()
+                .sorted(Comparator
+                        .comparing((ChatMessageLog item) -> item.getRiskScore() == null ? 0 : item.getRiskScore()).reversed()
+                        .thenComparing(ChatMessageLog::getCreateTime, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(topSize)
+                .collect(Collectors.toList());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("platformDistribution", platformDistribution);
+        result.put("timeTrend", toBucketList(timeTrend));
+        result.put("topHits", topHits);
+        return result;
+    }
+
+    private Map<String, Long> extractPlatformDistribution(Aggregate aggregate) {
+        Map<String, Long> buckets = new LinkedHashMap<>();
+        if (aggregate == null || !aggregate.isSterms()) {
+            return buckets;
+        }
+        for (StringTermsBucket bucket : aggregate.sterms().buckets().array()) {
+            buckets.put(bucket.key().stringValue(), bucket.docCount());
+        }
+        return buckets;
+    }
+
+    private List<Map<String, Object>> extractTimeTrend(Aggregate aggregate) {
+        List<Map<String, Object>> buckets = new ArrayList<>();
+        if (aggregate == null || !aggregate.isDateHistogram()) {
+            return buckets;
+        }
+        for (DateHistogramBucket bucket : aggregate.dateHistogram().buckets().array()) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("time", bucket.keyAsString());
+            item.put("count", bucket.docCount());
+            buckets.add(item);
+        }
+        return buckets;
+    }
+
+    private List<Map<String, Object>> toBucketList(Map<String, Long> buckets) {
+        return buckets.entrySet().stream()
+                .map(entry -> {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("time", entry.getKey());
+                    item.put("count", entry.getValue());
+                    return item;
+                })
+                .collect(Collectors.toList());
+    }
+
     private ChatMessageLog toChatLog(JsonNode source) {
         if (source == null || source.isMissingNode()) {
             return new ChatMessageLog();
@@ -158,10 +404,26 @@ public class ArchiveSearchService {
                 .setPlayerId(toText(source.get("player_id"), source.get("playerId")))
                 .setContent(toText(source.get("content")))
                 .setPlatform(toText(source.get("platform")))
+                .setStatus(toInteger(source.get("status")))
                 .setDecision(toText(source.get("decision")))
                 .setRiskScore(toInteger(source.get("risk_score"), source.get("riskScore")))
                 .setLabels(toText(source.get("labels")))
+                .setHitWords(toText(source.get("hit_words"), source.get("hitWords")))
+                .setAiAnalysisResult(toText(source.get("ai_analysis_result"), source.get("aiAnalysisResult")))
+                .setReasonTag(toText(source.get("reason_tag"), source.get("reasonTag")))
                 .setCreateTime(toLocalDateTime(source.get("create_time"), source.get("createTime")));
+    }
+
+    private ArchiveSearchHit toArchiveSearchHit(Hit<JsonNode> hit) {
+        ChatMessageLog message = toChatLog(hit.source());
+        List<String> contentHighlights = hit.highlight() == null
+                ? Collections.emptyList()
+                : hit.highlight().getOrDefault("content", Collections.emptyList());
+
+        return new ArchiveSearchHit()
+                .setMessage(message)
+                .setHighlights(hit.highlight() == null ? Collections.emptyMap() : hit.highlight())
+                .setHighlightContent(contentHighlights.isEmpty() ? message.getContent() : contentHighlights.get(0));
     }
 
     private Query buildEsQuery(String keyword,
@@ -177,16 +439,16 @@ public class ArchiveSearchService {
         }
 
         if (hasText(playerId)) {
-            boolQuery.filter(query -> query.term(term -> term.field("player_id").value(playerId)));
+            boolQuery.filter(query -> query.term(term -> term.field("player_id.keyword").value(playerId)));
         }
 
         if (hasText(decision)) {
-            boolQuery.filter(query -> query.term(term -> term.field("decision").value(decision)));
+            boolQuery.filter(query -> query.term(term -> term.field("decision.keyword").value(decision)));
         }
 
         if (hasText(labels)) {
             boolQuery.filter(query -> query.wildcard(wildcard -> wildcard
-                    .field("labels")
+                    .field("labels.keyword")
                     .value("*" + escapeWildcard(labels) + "*")
                     .caseInsensitive(true)));
         }

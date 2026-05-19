@@ -34,7 +34,7 @@ public class ArchiveSyncService {
     /**
      * 同步一条记录到 ES。
      *
-     * @author AI (under P6 supervision)
+     * @author AI (under P6_ES_Search supervision)
      */
     public void syncToEs(ChatMessageLog chatMessageLog) {
         if (!esEnabled || elasticsearchClient == null || chatMessageLog == null || chatMessageLog.getId() == null) {
@@ -47,9 +47,13 @@ public class ArchiveSyncService {
             document.put("player_id", chatMessageLog.getPlayerId());
             document.put("content", chatMessageLog.getContent());
             document.put("platform", chatMessageLog.getPlatform());
+            document.put("status", chatMessageLog.getStatus());
             document.put("decision", chatMessageLog.getDecision());
             document.put("risk_score", chatMessageLog.getRiskScore());
             document.put("labels", chatMessageLog.getLabels());
+            document.put("hit_words", chatMessageLog.getHitWords());
+            document.put("ai_analysis_result", chatMessageLog.getAiAnalysisResult());
+            document.put("reason_tag", chatMessageLog.getReasonTag());
             document.put("create_time", chatMessageLog.getCreateTime() == null ? null : chatMessageLog.getCreateTime().format(ES_DATE_TIME_FORMATTER));
 
             elasticsearchClient.index(request -> request

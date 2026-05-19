@@ -30,6 +30,9 @@ public class ChatMessageIndex {
     @Field(type = FieldType.Keyword, name = "platform")
     private String platform;
 
+    @Field(type = FieldType.Integer, name = "status")
+    private Integer status;
+
     @Field(type = FieldType.Keyword, name = "decision")
     private String decision;
 
@@ -38,6 +41,15 @@ public class ChatMessageIndex {
 
     @Field(type = FieldType.Keyword, name = "labels")
     private String labels;
+
+    @Field(type = FieldType.Keyword, name = "hit_words")
+    private String hitWords;
+
+    @Field(type = FieldType.Keyword, name = "ai_analysis_result", index = false)
+    private String aiAnalysisResult;
+
+    @Field(type = FieldType.Keyword, name = "reason_tag")
+    private String reasonTag;
 
     @Field(type = FieldType.Date, name = "create_time", format = DateFormat.date_hour_minute_second_millis)
     private LocalDateTime createTime;
