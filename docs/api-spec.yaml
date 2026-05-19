@@ -313,6 +313,130 @@ paths:
               schema:
                 $ref: '#/components/schemas/ResultChatMessageList'
 
+  /api/archive/search/highlight:
+    get:
+      tags: [Archive]
+      summary: 组合条件检索（含 ES 高亮片段）
+      operationId: archiveSearchHighlight
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+        - in: query
+          name: playerId
+          schema:
+            type: string
+        - in: query
+          name: decision
+          schema:
+            type: string
+            enum: [PASS, REVIEW, BLOCK]
+        - in: query
+          name: labels
+          schema:
+            type: string
+        - in: query
+          name: startTime
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: endTime
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 200
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultArchiveSearchHitList'
+
+  /api/archive/analysis:
+    get:
+      tags: [Archive]
+      summary: 归档聚合分析
+      operationId: archiveAnalysis
+      parameters:
+        - in: query
+          name: keyword
+          schema:
+            type: string
+        - in: query
+          name: playerId
+          schema:
+            type: string
+        - in: query
+          name: decision
+          schema:
+            type: string
+            enum: [PASS, REVIEW, BLOCK]
+        - in: query
+          name: labels
+          schema:
+            type: string
+        - in: query
+          name: startTime
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: endTime
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: topHitLimit
+          schema:
+            type: integer
+            default: 5
+            maximum: 20
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultArchiveAnalysis'
+
+  /api/archive/reindex:
+    post:
+      tags: [Archive]
+      summary: 从 MySQL 回填归档数据到 ES
+      operationId: archiveReindex
+      parameters:
+        - in: query
+          name: batchSize
+          schema:
+            type: integer
+            default: 500
+            maximum: 1000
+        - in: query
+          name: maxRows
+          schema:
+            type: integer
+            default: 10000
+            maximum: 1000000
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultMapObject'
+
   /api/dashboard/metrics:
     get:
       tags: [Dashboard]
@@ -389,6 +513,70 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ChatMessageLog'
+
+    ResultArchiveSearchHitList:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchiveSearchHit'
+
+    ArchiveSearchHit:
+      type: object
+      properties:
+        message:
+          $ref: '#/components/schemas/ChatMessageLog'
+        highlights:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        highlightContent:
+          type: string
+
+    ResultArchiveAnalysis:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ArchiveAnalysis'
+
+    ArchiveAnalysis:
+      type: object
+      properties:
+        platformDistribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        timeTrend:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArchiveTimeBucket'
+        topHits:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessageLog'
+
+    ArchiveTimeBucket:
+      type: object
+      properties:
+        time:
+          type: string
+        count:
+          type: integer
+          format: int64
 
     ResultModerationAuditList:
       type: object
