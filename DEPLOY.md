@@ -355,3 +355,83 @@ curl -s "http://localhost:8080/api/archive/analysis?decision=BLOCK&topHitLimit=5
 ```
 
 后端日志出现 `path=ES` 表示命中 ES 路径；出现 `path=MYSQL` 表示 ES 未启用或查询失败，系统正在临时降级。
+
+### 4.压力测试
+
+#### 环境准备
+
+##### Python 依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+##### Node.js 依赖
+
+```bash
+npm install ws
+```
+
+启动终端后，进行如下测试
+
+##### 场景一：海量并发消息摄取
+
+**脚本**：`locustfile_ingest.py`
+
+##### 启动方式：
+
+```bash
+locust -f locustfile_ingest.py --host=http://localhost:8080
+```
+
+浏览器打开 `http://localhost:8089`，填入并发用户数和 Spawn rate，点击 **Start swarming**。
+
+建议参数：
+
+| 场景     | Users | Spawn rate |
+| -------- | ----- | ---------- |
+| 初步摸底 | 100   | 10         |
+| 中等压力 | 300   | 30         |
+| 极限冲击 | 600   | 100        |
+
+##### 场景二：大屏 WebSocket 多开长连接
+
+**脚本**：`ws_dashboard_load.js`
+
+##### 基本用法
+
+```bash
+# 默认 200 个连接
+node ws_dashboard_load.js
+
+# 指定连接数
+node ws_dashboard_load.js --connections 500
+
+# 含慢客户端（10 个连接人为延迟 500ms，测试后端广播背压）
+node ws_dashboard_load.js --connections 500 --slow 10
+
+# 指向非本地服务
+node ws_dashboard_load.js --host ws://10.0.0.5:8080 --connections 300
+```
+
+#### 联合压测（终极场景）
+
+同时运行场景一和场景二，模拟真实生产环境：大量玩家发言 + 多个运营大屏同时在线。
+
+```bash
+# 终端 1：Locust 摄取压测（阶梯加压）
+locust -f locustfile_ingest.py --host=http://localhost:8080
+
+# 终端 2：WebSocket 大屏多开（含慢客户端）
+node ws_dashboard_load.js --connections 300 --slow 10
+```
+
+**联合观测要点**：
+
+1. RabbitMQ `chat.message.queue` 的 Ready 数在 WS 连接建立前后是否有变化
+   - 若 WS 连上后 Ready 才开始堆积 → 广播占用了消费线程资源
+   - 若 WS 连上前后无差异 → 瓶颈在 DeepSeek / MySQL，与 WS 无关
+2. Locust 的 P99 延迟曲线在 WS 连接数爬升期间是否抖动
+   - 若抖动 → WebSocket 握手与 HTTP 请求共用了 Tomcat 线程池资源
+3. 慢客户端（`--slow 10`）在线期间，后端 JVM 堆内存是否线性上涨
+   - 若上涨不收敛 → `DashboardPushService` 广播缓冲区存在内存泄漏风险
