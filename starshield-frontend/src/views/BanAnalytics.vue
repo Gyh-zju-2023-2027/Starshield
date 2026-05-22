@@ -1,129 +1,152 @@
-<template>
-  <div class="board-wrap">
-    <header class="board-header">
-      <div class="head-block">
-        <div class="live-dot">
-          <span class="pulse" />
-          <span class="solid" />
+﻿<template>
+  <div class="ss-page">
+    <PageIntro
+      eyebrow="Aether Command · Ban Analytics"
+      title="封禁分析"
+      description="按封禁样本聚合平台、热词、玩家和风险分，支持关键词高亮检索。"
+    >
+      <template #meta>
+        <div class="grid min-w-[300px] grid-cols-2 gap-3">
+          <MetricCard label="加载状态" :value="loading ? '更新中' : statusText" helper="当前分析状态" icon="sync" :accent="loading ? 'amber' : 'rose'" />
+          <MetricCard label="高亮检索" :value="searchMode ? `${highlightRows.length} 条` : '未启用'" helper="关键词高亮" icon="search" accent="cyan" />
         </div>
-        <div class="titles">
-          <p class="eyebrow">封禁全景 · BAN ANALYTICS</p>
-          <h1>封禁消息分析大屏</h1>
-          <p class="sub">归档检索 · decision = BLOCK · 热词 / 名单 / 排行榜</p>
+      </template>
+    </PageIntro>
+
+    <SurfacePanel>
+      <div class="ss-toolbar">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="ss-chip ss-chip--accent">decision = BLOCK</span>
+          <span class="ss-chip">ES 聚合分析</span>
+          <span class="ss-chip">高亮检索</span>
+        </div>
+        <div class="flex w-full flex-wrap items-center gap-3 lg:w-auto">
+          <el-input
+            v-model="filterText"
+            placeholder="输入关键词，高亮显示封禁文本片段"
+            clearable
+            class="w-full lg:w-[320px]"
+          />
+          <el-button type="primary" class="ss-button-primary !rounded-2xl !border-none !px-5 !py-5" :loading="loading" @click="loadData">刷新</el-button>
         </div>
       </div>
-      <div class="header-right">
-        <span class="ws-indicator" :class="{ online: !loading }">
-          {{ loading ? '加载中…' : statusText }}
-        </span>
-        <el-button type="primary" class="dash-refresh" :loading="loading" @click="loadData">刷新</el-button>
-      </div>
-    </header>
 
-    <section class="kpi-grid">
-      <div class="kpi">
-        <span class="label">封禁消息总数</span>
-        <span class="val danger">{{ blocked.length }}</span>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="封禁消息总数" :value="blocked.length" helper="当前样本总量" icon="block" accent="rose" />
+        <MetricCard label="涉及玩家数" :value="uniquePlayers" helper="去重后玩家数量" icon="groups" />
+        <MetricCard label="热词数量" :value="hotWords.length" helper="当前可见热词" icon="local_fire_department" accent="amber" />
+        <MetricCard label="平均风险分" :value="avgRiskScore" helper="风险均值" icon="warning" accent="cyan" />
       </div>
-      <div class="kpi">
-        <span class="label">涉及玩家数</span>
-        <span class="val">{{ uniquePlayers }}</span>
-      </div>
-      <div class="kpi">
-        <span class="label">热词命中数</span>
-        <span class="val warn">{{ hotWords.length }}</span>
-      </div>
-      <div class="kpi">
-        <span class="label">平均风险分</span>
-        <span class="val danger">{{ avgRiskScore }}</span>
-      </div>
-    </section>
+    </SurfacePanel>
 
-    <section class="analysis-grid">
-      <div class="panel">
-        <h3>平台分布 · ES Terms</h3>
-        <div ref="platformChartRef" class="mini-chart"></div>
-        <p v-if="!platformDistribution.length && !loading" class="word-empty">暂无平台聚合数据</p>
-      </div>
+    <div class="mt-6 grid gap-6 xl:grid-cols-2">
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">平台分布</h2>
+          <p class="ss-section-copy">看看封禁内容主要来自哪些平台。</p>
+        </div>
+        <div ref="platformChartRef" class="h-[300px]"></div>
+        <div v-if="!platformDistribution.length && !loading" class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
+          暂无平台聚合数据
+        </div>
+      </SurfacePanel>
 
-      <div class="panel">
-        <h3>封禁趋势 · ES Date Histogram</h3>
-        <div ref="trendChartRef" class="mini-chart"></div>
-        <p v-if="!timeTrend.length && !loading" class="word-empty">暂无趋势聚合数据</p>
-      </div>
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">封禁趋势</h2>
+          <p class="ss-section-copy">结合时间趋势判断封禁高峰是否集中在某些时段。</p>
+        </div>
+        <div ref="trendChartRef" class="h-[300px]"></div>
+        <div v-if="!timeTrend.length && !loading" class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
+          暂无趋势聚合数据
+        </div>
+      </SurfacePanel>
+    </div>
 
-      <div class="panel">
-        <h3>封禁消息热词云（命中词 + 内容）</h3>
-        <div class="word-cloud">
+    <div class="mt-6 grid gap-6 xl:grid-cols-2">
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">封禁热词</h2>
+          <p class="ss-section-copy">综合命中词和内容文本抽出的热词，用来看违规内容主题。</p>
+        </div>
+        <div class="flex min-h-[260px] flex-wrap content-start gap-3">
           <span
             v-for="(item, idx) in hotWords"
             :key="`${item.word}-${idx}`"
-            class="word-item"
+            class="rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 font-semibold transition hover:-translate-y-0.5"
             :style="wordStyle(item, idx)"
             :title="`${item.word} · 出现 ${item.count} 次`"
           >
             {{ item.word }}
           </span>
-          <span v-if="!hotWords.length && !loading" class="word-empty">暂无封禁热词</span>
-          <span v-if="loading && !hotWords.length" class="word-empty">数据加载中…</span>
+          <div v-if="!hotWords.length && !loading" class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-slate-500">
+            暂无封禁热词
+          </div>
+        </div>
+      </SurfacePanel>
+
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">被封玩家排行</h2>
+          <p class="ss-section-copy">选出出现次数最多的玩家，用来辅助追踪重复风险来源。</p>
+        </div>
+        <div ref="rankChartRef" class="h-[300px]"></div>
+        <div v-if="!playerRank.length && !loading" class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
+          暂无封禁玩家数据
+        </div>
+      </SurfacePanel>
+    </div>
+
+    <SurfacePanel class="mt-6" tone="muted">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="ss-section-title">{{ listTitle }}</h2>
+          <p class="ss-section-copy">当你输入关键词时，这里会切换为高亮检索结果。</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span v-if="highlightLoading" class="ss-chip">检索中</span>
+          <span class="ss-chip">{{ filteredList.length }} 条</span>
         </div>
       </div>
 
-      <div class="panel">
-        <h3>被封禁数量排行榜 · Top {{ rankTopN }}</h3>
-        <div ref="rankChartRef" class="rank-chart"></div>
-        <p v-if="!playerRank.length && !loading" class="word-empty">暂无封禁玩家数据</p>
+      <div class="grid grid-cols-[120px_minmax(0,1fr)_160px_76px_160px] gap-3 border-b border-white/10 px-1 pb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        <span>玩家 ID</span>
+        <span>封禁内容</span>
+        <span>命中词</span>
+        <span>风险</span>
+        <span>时间</span>
       </div>
-    </section>
 
-    <section class="stream-panel">
-      <div class="stream-head">
-        <h3>{{ listTitle }}</h3>
-        <div class="stream-tools">
-          <el-input
-            v-model="filterText"
-            placeholder="输入关键词，展示 ES <mark> 高亮片段"
-            clearable
-            size="small"
-            class="filter-input"
-          />
-        </div>
-      </div>
-      <div class="stream-list">
-        <div class="stream-row stream-row--head">
-          <span class="col-id">玩家 ID</span>
-          <span class="col-content">封禁内容</span>
-          <span class="col-hit">命中词</span>
-          <span class="col-risk">风险</span>
-          <span class="col-time">时间</span>
-        </div>
+      <div class="ss-scrollbar max-h-[520px] overflow-y-auto pr-1">
         <div
-          class="stream-row"
           v-for="item in filteredList"
           :key="item.id"
+          class="grid grid-cols-[120px_minmax(0,1fr)_160px_76px_160px] items-start gap-3 border-b border-white/8 px-1 py-3 text-sm last:border-0"
         >
-          <span class="col-id" :title="item.playerId">{{ item.playerId }}</span>
+          <span class="truncate text-slate-400" :title="item.playerId">{{ item.playerId }}</span>
           <span
-            class="col-content"
-            :class="{ 'col-content--highlight': searchMode }"
+            class="leading-6 text-slate-200"
+            :class="{ 'text-slate-100': searchMode }"
             :title="item.content"
             v-html="renderContent(item)"
           />
-          <span class="col-hit">
-            <span v-if="item.hitWords" class="hit-chip">{{ item.hitWords }}</span>
-            <span v-else class="muted">—</span>
+          <span class="truncate text-xs text-slate-400">
+            <span v-if="item.hitWords" class="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-2.5 py-1 text-rose-100">
+              {{ item.hitWords }}
+            </span>
+            <span v-else>—</span>
           </span>
-          <span class="col-risk">
-            <span class="tag danger">{{ item.riskScore ?? '-' }}</span>
+          <span class="inline-flex rounded-full border border-rose-400/20 bg-rose-400/10 px-2.5 py-1 text-center text-xs font-semibold text-rose-100">
+            {{ item.riskScore ?? '-' }}
           </span>
-          <span class="col-time">{{ formatTime(item.createTime) }}</span>
+          <span class="text-xs text-slate-500">{{ formatTime(item.createTime) }}</span>
         </div>
-        <div v-if="!filteredList.length && !loading && !highlightLoading" class="empty-row">
+
+        <div v-if="!filteredList.length && !loading && !highlightLoading" class="px-4 py-10 text-center text-sm text-slate-500">
           没有匹配的封禁消息
         </div>
-        <div v-if="highlightLoading" class="empty-row">正在检索高亮片段…</div>
       </div>
-    </section>
+    </SurfacePanel>
   </div>
 </template>
 
@@ -135,6 +158,9 @@ import {
   searchBlockedMessages,
   searchBlockedMessagesWithHighlight
 } from '../api/archive'
+import MetricCard from '../components/ui/MetricCard.vue'
+import PageIntro from '../components/ui/PageIntro.vue'
+import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
 const REFRESH_INTERVAL_MS = 15000
 const FETCH_LIMIT = 500
@@ -150,7 +176,6 @@ const filterText = ref('')
 const rankChartRef = ref(null)
 const platformChartRef = ref(null)
 const trendChartRef = ref(null)
-const rankTopN = ref(RANK_TOP_N)
 
 let rankChart = null
 let platformChart = null
@@ -161,18 +186,16 @@ let highlightRequestSeq = 0
 let unmounted = false
 
 const STOP_WORDS = new Set([
-  '的', '了', '是', '在', '和', '就', '都', '这', '那', '你', '我', '他',
-  '她', '它', '我们', '你们', '他们', '一个', '这个', '那个', '还有', '已经',
-  '可以', '一下', '真的', '就是', '然后', '但是', '因为', '所以', '什么',
+  '的', '了', '是', '在', '和', '就', '都', '这', '那', '你', '我', '们',
+  '她', '他', '我们', '你们', '他们', '一个', '这个', '那个', '还有', '已经',
+  '可以', '真的', '就是', '然后', '但是', '因为', '所以', '什么',
   '怎么', '现在', '不要', 'please', 'the', 'and', 'for', 'with', 'that',
   'this', 'from', 'you', 'are', 'have', 'has', 'not', 'but', 'just',
-  // B 站表情内文常见残留，二次兜底，避免方括号被去掉后单字仍混入
   'doge', 'tv', 'ovo', 'tvt', 'qaq', 'qwq', 'ojbk', '笑哭', '妙啊',
   '微笑', '滑稽', '吃瓜', '热词', '系列', '给心心', '保佑', '抓狂',
   '脱单doge', '辣眼睛', '酸了', '酸成柠檬精'
 ])
 
-// B 站表情占位（如 [doge] [笑哭] [给心心] [热词系列_啊?]）和 @ 提及
 const BILI_EMOJI_RE = /\[[^\[\]\n]{1,20}\]/g
 const AT_MENTION_RE = /@[\w\u4e00-\u9fa5\-_]{1,32}/g
 
@@ -195,16 +218,10 @@ const hotWords = computed(() => {
 
   for (const item of blocked.value) {
     const hitTokens = tokenize(item?.hitWords)
-    for (const w of hitTokens) {
-      counter.set(w, (counter.get(w) || 0) + 3)
-    }
+    for (const w of hitTokens) counter.set(w, (counter.get(w) || 0) + 3)
 
-    const contentTokens = tokenize(item?.content).filter(
-      (w) => w.length >= 2 && !STOP_WORDS.has(w)
-    )
-    for (const w of contentTokens) {
-      counter.set(w, (counter.get(w) || 0) + 1)
-    }
+    const contentTokens = tokenize(item?.content).filter((w) => w.length >= 2 && !STOP_WORDS.has(w))
+    for (const w of contentTokens) counter.set(w, (counter.get(w) || 0) + 1)
   }
 
   return Array.from(counter.entries())
@@ -252,9 +269,7 @@ const platformDistribution = computed(() => {
 })
 
 const timeTrend = computed(() => {
-  const source = Array.isArray(archiveAnalysis.value?.timeTrend)
-    ? archiveAnalysis.value.timeTrend
-    : []
+  const source = Array.isArray(archiveAnalysis.value?.timeTrend) ? archiveAnalysis.value.timeTrend : []
   return source
     .map((item) => ({
       time: String(item?.time || ''),
@@ -266,19 +281,13 @@ const timeTrend = computed(() => {
 const searchMode = computed(() => filterText.value.trim().length > 0)
 
 const listTitle = computed(() => {
-  if (!searchMode.value) {
-    return `所有封禁消息（共 ${blocked.value.length} 条）`
-  }
+  if (!searchMode.value) return `所有封禁消息（共 ${blocked.value.length} 条）`
   return `高亮检索结果（共 ${highlightRows.value.length} 条）`
 })
 
 const statusText = computed(() => {
-  if (highlightLoading.value) {
-    return '高亮检索中…'
-  }
-  if (searchMode.value) {
-    return `命中 ${highlightRows.value.length} 条`
-  }
+  if (highlightLoading.value) return '检索中'
+  if (searchMode.value) return `命中 ${highlightRows.value.length} 条`
   return `已加载 ${blocked.value.length} 条`
 })
 
@@ -320,21 +329,18 @@ function sanitizeHighlight(value) {
 }
 
 function renderContent(item) {
-  if (searchMode.value) {
-    return sanitizeHighlight(item?.highlightContent || item?.content)
-  }
+  if (searchMode.value) return sanitizeHighlight(item?.highlightContent || item?.content)
   return escapeHtml(item?.content)
 }
 
 function wordStyle(item, idx) {
   const count = Number(item?.count || 0)
-  const size = Math.max(13, Math.min(40, 12 + Math.log2(count + 1) * 6))
+  const size = Math.max(13, Math.min(32, 12 + Math.log2(count + 1) * 4.5))
   const hue = (idx * 41 + 350) % 360
   const intensity = Math.min(72, 45 + count * 2)
   return {
     fontSize: `${size}px`,
-    color: `hsl(${hue} ${intensity}% 64%)`,
-    textShadow: '0 0 18px rgba(251, 113, 133, 0.18)'
+    color: `hsl(${hue} ${intensity}% 68%)`
   }
 }
 
@@ -345,9 +351,7 @@ function formatTime(value) {
     const d = parseDateTime(value)
     if (Number.isNaN(d.getTime())) return String(value)
     const pad = (n) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
-      d.getHours()
-    )}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   } catch (_) {
     return String(value)
   }
@@ -393,7 +397,7 @@ function renderRankChart() {
         return p ? `<b>${p.name}</b><br/>封禁条数：${p.value}` : ''
       }
     },
-    grid: { left: 110, right: 24, top: 16, bottom: 24 },
+    grid: { left: 100, right: 24, top: 16, bottom: 24 },
     xAxis: {
       type: 'value',
       axisLine: { lineStyle: { color: '#334155' } },
@@ -406,7 +410,6 @@ function renderRankChart() {
       axisLine: { lineStyle: { color: '#334155' } },
       axisLabel: {
         color: '#cbd5f5',
-        fontFamily: 'Manrope, Inter, sans-serif',
         formatter: (val) => (val.length > 12 ? `${val.slice(0, 12)}…` : val)
       }
     },
@@ -417,12 +420,10 @@ function renderRankChart() {
         barMaxWidth: 22,
         itemStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: '#fb7185' },
-            { offset: 1, color: '#f97316' }
+            { offset: 0, color: '#FF6B57' },
+            { offset: 1, color: '#F7B955' }
           ]),
-          borderRadius: [0, 8, 8, 0],
-          shadowBlur: 14,
-          shadowColor: 'rgba(251, 113, 133, 0.35)'
+          borderRadius: [0, 8, 8, 0]
         },
         label: {
           show: true,
@@ -464,7 +465,7 @@ function renderPlatformChart() {
           borderColor: '#020617',
           borderWidth: 2
         },
-        color: ['#fb7185', '#f97316', '#38bdf8', '#a78bfa', '#22c55e', '#facc15']
+        color: ['#FF6B57', '#F7B955', '#5EE6FF', '#6C63FF', '#42D392', '#3B82F6']
       }
     ]
   })
@@ -501,12 +502,12 @@ function renderTrendChart() {
         smooth: true,
         symbolSize: 7,
         data: data.map((item) => item.count),
-        lineStyle: { width: 3, color: '#fb7185' },
-        itemStyle: { color: '#f97316' },
+        lineStyle: { width: 3, color: '#FF6B57' },
+        itemStyle: { color: '#F7B955' },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(251, 113, 133, 0.32)' },
-            { offset: 1, color: 'rgba(251, 113, 133, 0.02)' }
+            { offset: 0, color: 'rgba(255, 107, 87, 0.28)' },
+            { offset: 1, color: 'rgba(255, 107, 87, 0.02)' }
           ])
         }
       }
@@ -531,7 +532,7 @@ async function loadData() {
     blocked.value = list
     archiveAnalysis.value = analysisRes?.data || null
   } catch (_) {
-    // 静默失败，保留上次数据
+    // keep last data
   } finally {
     loading.value = false
   }
@@ -558,13 +559,9 @@ async function loadHighlightData(keyword) {
       return tb - ta
     })
   } catch (_) {
-    if (requestSeq === highlightRequestSeq) {
-      highlightRows.value = []
-    }
+    if (requestSeq === highlightRequestSeq) highlightRows.value = []
   } finally {
-    if (requestSeq === highlightRequestSeq) {
-      highlightLoading.value = false
-    }
+    if (requestSeq === highlightRequestSeq) highlightLoading.value = false
   }
 }
 
@@ -638,375 +635,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.board-wrap {
-  --card: rgba(15, 23, 42, 0.65);
-  --card-bd: rgba(251, 113, 133, 0.18);
-  --text: #e2e8f0;
-  --muted: #8ba3c7;
-  min-height: 100vh;
-  padding: 20px 24px 48px;
-  color: var(--text);
-  background:
-    radial-gradient(ellipse 140% 80% at 0% -40%, rgba(251, 113, 133, 0.12), transparent),
-    radial-gradient(ellipse 100% 60% at 100% 0%, rgba(244, 114, 182, 0.08), transparent),
-    linear-gradient(175deg, #020617 0%, #0a0612 42%, #020617 100%);
-}
-
-.board-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  padding-bottom: 18px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid rgba(251, 113, 133, 0.16);
-}
-
-.head-block {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.live-dot {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  margin-top: 8px;
-  flex-shrink: 0;
-}
-
-.live-dot .solid {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fef08a, #fb7185);
-  box-shadow: 0 0 16px rgba(251, 113, 133, 0.7);
-}
-
-.live-dot .pulse {
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  background: rgba(251, 113, 133, 0.25);
-  animation: ripple 2s ease-out infinite;
-}
-
-@keyframes ripple {
-  0% {
-    transform: scale(0.85);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.85);
-    opacity: 0;
-  }
-}
-
-.titles .eyebrow {
-  margin: 0 0 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  background: linear-gradient(90deg, #fb7185, #f97316);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-.titles h1 {
-  margin: 0;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 1.6rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: #f8fafc;
-  text-shadow: 0 0 40px rgba(251, 113, 133, 0.15);
-}
-
-.titles .sub {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 420px;
-  line-height: 1.5;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ws-indicator {
-  border-radius: 999px;
-  border: 1px solid rgba(251, 146, 60, 0.45);
-  background: rgba(180, 83, 9, 0.15);
-  color: #fed7aa;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.ws-indicator.online {
-  border-color: rgba(74, 222, 128, 0.55);
-  background: rgba(22, 101, 52, 0.3);
-  color: #bbf7d0;
-}
-
-.board-wrap :deep(.dash-refresh) {
-  --el-button-hover-bg-color: #be123c;
-  background: linear-gradient(135deg, #fb7185 0%, #be123c 100%);
-  border: none;
-  color: #fff;
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 9px 20px;
-  box-shadow: 0 8px 24px rgba(251, 113, 133, 0.28);
-}
-
-.kpi-grid {
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.kpi {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-  padding: 18px 16px;
-  border: 1px solid var(--card-bd);
-  background:
-    radial-gradient(120% 140% at 0% -20%, rgba(251, 113, 133, 0.08), transparent),
-    linear-gradient(165deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.92));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 12px 32px rgba(0, 0, 0, 0.35);
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.kpi::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 14px;
-  right: 14px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, rgba(251, 113, 133, 0.95), transparent);
-}
-
-.kpi:hover {
-  transform: translateY(-2px);
-  border-color: rgba(251, 113, 133, 0.45);
-}
-
-.kpi:nth-child(2)::before {
-  background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.95), transparent);
-}
-
-.kpi:nth-child(3)::before {
-  background: linear-gradient(90deg, transparent, rgba(250, 204, 21, 0.95), transparent);
-}
-
-.label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.val {
-  display: block;
-  margin-top: 10px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.val.warn {
-  color: #fde047;
-  text-shadow: 0 0 24px rgba(250, 204, 21, 0.25);
-}
-.val.danger {
-  color: #fb923c;
-  text-shadow: 0 0 24px rgba(251, 146, 60, 0.3);
-}
-
-.analysis-grid {
-  margin-top: 20px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.panel {
-  border-radius: 18px;
-  padding: 16px;
-  border: 1px solid var(--card-bd);
-  background: var(--card);
-  backdrop-filter: blur(12px);
-  min-height: 320px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
-}
-
-.panel h3 {
-  margin: 0 0 6px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.word-cloud {
-  min-height: 260px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  align-content: flex-start;
-  padding-top: 10px;
-}
-
-.word-item {
-  display: inline-flex;
-  align-items: center;
-  line-height: 1.1;
-  font-weight: 700;
-  padding: 2px 4px;
-  transition: transform 0.18s ease;
-  cursor: default;
-}
-
-.word-item:hover {
-  transform: scale(1.08);
-}
-
-.word-empty {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.rank-chart {
-  height: 280px;
-}
-
-.mini-chart {
-  height: 280px;
-}
-
-.stream-panel {
-  margin-top: 16px;
-  border-radius: 18px;
-  padding: 16px;
-  border: 1px solid rgba(251, 113, 133, 0.18);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(2, 6, 23, 0.88));
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.35);
-}
-
-.stream-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.stream-head h3 {
-  margin: 0;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.stream-tools {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.stream-tools :deep(.filter-input) {
-  width: 260px;
-}
-
-.stream-list {
-  max-height: 540px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(251, 113, 133, 0.35) transparent;
-}
-
-.stream-list::-webkit-scrollbar {
-  width: 6px;
-}
-.stream-list::-webkit-scrollbar-thumb {
-  background: rgba(251, 113, 133, 0.35);
-  border-radius: 3px;
-}
-
-.stream-row {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) 180px 80px 170px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 10px;
-  border-radius: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-  font-size: 12.5px;
-}
-
-.stream-row--head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: rgba(2, 6, 23, 0.9);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-  border-bottom: 1px solid rgba(251, 113, 133, 0.18);
-}
-
-.stream-row:not(.stream-row--head):nth-child(even) {
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.stream-row:not(.stream-row--head):hover {
-  background: rgba(251, 113, 133, 0.07);
-}
-
-.col-id {
-  color: #cbd5f5;
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.col-content {
-  color: #b8cbdb;
-  line-height: 1.45;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.col-content--highlight {
-  color: #dbeafe;
-}
-
-.col-content :deep(mark) {
+:deep(mark) {
   display: inline;
   border-radius: 4px;
   padding: 0 2px;
@@ -1014,74 +643,5 @@ onUnmounted(() => {
   color: #fde68a;
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.14);
 }
-
-.col-hit {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hit-chip {
-  display: inline-block;
-  max-width: 100%;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(127, 29, 29, 0.45);
-  color: #fecaca;
-  border: 1px solid rgba(252, 165, 165, 0.35);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.muted {
-  color: #64748b;
-}
-
-.col-risk .tag {
-  display: inline-block;
-  min-width: 42px;
-  text-align: center;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 4px 8px;
-  letter-spacing: 0.03em;
-}
-
-.tag.danger {
-  background: rgba(127, 29, 29, 0.5);
-  color: #fecaca;
-  border: 1px solid rgba(252, 165, 165, 0.4);
-}
-
-.col-time {
-  color: #94a3b8;
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.empty-row {
-  padding: 28px 12px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-@media (max-width: 1100px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .analysis-grid {
-    grid-template-columns: 1fr;
-  }
-  .stream-row {
-    grid-template-columns: 100px minmax(0, 1fr) 80px;
-  }
-  .stream-row .col-hit,
-  .stream-row .col-time {
-    display: none;
-  }
-}
 </style>
+

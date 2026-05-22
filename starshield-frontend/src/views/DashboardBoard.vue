@@ -1,81 +1,103 @@
-<template>
-  <div class="board-wrap">
-    <header class="board-header">
-      <div class="head-block">
-        <div class="live-dot">
-          <span class="pulse" />
-          <span class="solid" />
+﻿<template>
+  <div class="ss-page">
+    <PageIntro
+      eyebrow="Aether Command · Realtime"
+      title="实时大屏"
+      description="查看实时指标、平台分布、热点词和最新消息流，快速判断当前风险态势。"
+    >
+      <template #meta>
+        <div class="grid min-w-[300px] grid-cols-2 gap-3">
+          <MetricCard label="连接状态" :value="wsConnected ? '在线' : '重连中'" helper="Dashboard WS" icon="wifi" :accent="wsConnected ? 'cyan' : 'amber'" />
+          <MetricCard label="最新总量" :value="metrics.total || 0" helper="当前采样汇总" icon="query_stats" accent="cyan" />
         </div>
-        <div class="titles">
-          <p class="eyebrow">全链路监控</p>
-          <h1>全服舆情实时看板</h1>
-          <p class="sub">Kafka / MQ · 抽样 100 条 · 双线趋势 & 分区对比</p>
+      </template>
+    </PageIntro>
+
+    <SurfacePanel>
+      <div class="ss-toolbar">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="ss-chip" :class="wsConnected ? 'ss-chip--accent' : ''">{{ wsConnected ? 'WebSocket 在线' : 'WebSocket 重连中' }}</span>
+          <span class="ss-chip">1s 实时刷新</span>
+          <span class="ss-chip">5s 趋势采样</span>
         </div>
+        <el-button type="primary" class="ss-button-primary !rounded-2xl !border-none !px-5 !py-5" @click="refreshNow">刷新</el-button>
       </div>
-      <div class="header-right">
-        <span class="ws-indicator" :class="{ online: wsConnected }">
-          {{ wsConnected ? 'WS 在线' : 'WS 重连中' }}
-        </span>
-        <el-button type="primary" class="dash-refresh" @click="refreshNow">刷新</el-button>
-      </div>
-    </header>
 
-    <section class="kpi-grid">
-      <div class="kpi">
-        <span class="label">总消息量</span>
-        <span class="val">{{ metrics.total || 0 }}</span>
+      <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="总消息量" :value="metrics.total || 0" helper="当前总量" icon="forum" />
+        <MetricCard label="已拦截" :value="metrics.blocked || 0" helper="BLOCK 总数" icon="gpp_bad" accent="rose" />
+        <MetricCard label="待复核" :value="metrics.review || 0" helper="REVIEW 总数" icon="playlist_add_check" accent="amber" />
+        <MetricCard label="拦截率" :value="`${formatRate(metrics.blockRate)}%`" helper="blocked / total" icon="monitoring" accent="cyan" />
       </div>
-      <div class="kpi">
-        <span class="label">已拦截</span>
-        <span class="val warn">{{ metrics.blocked || 0 }}</span>
-      </div>
-      <div class="kpi">
-        <span class="label">待复核</span>
-        <span class="val">{{ metrics.review || 0 }}</span>
-      </div>
-      <div class="kpi">
-        <span class="label">拦截率</span>
-        <span class="val danger">{{ formatRate(metrics.blockRate) }}%</span>
-      </div>
-    </section>
+    </SurfacePanel>
 
-    <section class="chart-panel">
-      <h3>情绪/违规波动（近30次刷新）</h3>
-      <div ref="trendChartRef" class="chart"></div>
-    </section>
+    <div class="mt-6 grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">实时风险趋势</h2>
+          <p class="ss-section-copy">近 30 次刷新窗口内，观察拦截率和待复核量的联动变化。</p>
+        </div>
+        <div ref="trendChartRef" class="h-[320px]"></div>
+      </SurfacePanel>
 
-    <section class="analysis-grid">
-      <div class="panel">
-        <h3>热点词云（最近100条）</h3>
-        <div class="word-cloud">
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">平台分布</h2>
+          <p class="ss-section-copy">按平台聚合当前样本，用来判断风险是否集中在某个渠道。</p>
+        </div>
+        <div ref="platformChartRef" class="h-[320px]"></div>
+      </SurfacePanel>
+    </div>
+
+    <div class="mt-6 grid gap-6 xl:grid-cols-[0.95fr_1.35fr]">
+      <SurfacePanel>
+        <div class="mb-4">
+          <h2 class="ss-section-title">热点词云</h2>
+          <p class="ss-section-copy">最近样本提取出的高频词，便于快速感知讨论焦点。</p>
+        </div>
+        <div class="flex min-h-[240px] flex-wrap content-start gap-3">
           <span
             v-for="(item, idx) in metrics.hotWords"
             :key="`${item.word}-${idx}`"
-            class="word-item"
+            class="rounded-full border border-white/10 bg-white/[0.03] px-3 py-2 font-semibold transition hover:-translate-y-0.5"
             :style="wordStyle(item, idx)"
           >
             {{ item.word }}
           </span>
-          <span v-if="!metrics.hotWords.length" class="word-empty">暂无热点词</span>
+          <div v-if="!metrics.hotWords.length" class="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-sm text-slate-500">
+            暂无热点词
+          </div>
         </div>
-      </div>
+      </SurfacePanel>
 
-      <div class="panel">
-        <h3>分区对比图（平台分布）</h3>
-        <div ref="platformChartRef" class="platform-chart"></div>
-      </div>
-    </section>
-
-    <section class="stream-panel">
-      <h3>最新消息流（最近100条）</h3>
-      <div class="stream-list">
-        <div class="stream-row" v-for="item in metrics.latest || []" :key="item.id">
-          <span class="id">{{ item.playerId }}</span>
-          <span class="txt">{{ item.content }}</span>
-          <span class="tag" :class="tagClass(item.decision)">{{ item.decision }}</span>
+      <SurfacePanel tone="muted" class="min-w-0 overflow-hidden">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 class="ss-section-title">最新消息流</h2>
+            <p class="ss-section-copy">保留一份近似日志流的视图，方便你把指标波动和具体文本对上。</p>
+          </div>
+          <span class="ss-chip">{{ (metrics.latest || []).length }} 条</span>
         </div>
-      </div>
-    </section>
+        <div class="ss-scrollbar max-h-[420px] overflow-x-hidden overflow-y-auto pr-3">
+          <div
+            v-for="item in metrics.latest || []"
+            :key="item.id"
+            class="grid min-w-0 grid-cols-[108px_minmax(0,1fr)_78px] items-start gap-3 rounded-2xl border-b border-white/8 px-1 py-3 last:border-0"
+          >
+            <div class="truncate text-xs text-slate-400">{{ item.playerId }}</div>
+            <div class="min-w-0 break-words text-sm leading-6 text-slate-200">{{ item.content }}</div>
+            <div class="min-w-0 text-right">
+              <span
+                class="inline-flex max-w-full rounded-full border px-2 py-1 text-[11px] font-semibold"
+                :class="decisionTagClass(item.decision)"
+              >
+                {{ item.decision }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </SurfacePanel>
+    </div>
   </div>
 </template>
 
@@ -83,8 +105,10 @@
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { fetchDashboardMetrics } from '../api/dashboard'
+import MetricCard from '../components/ui/MetricCard.vue'
+import PageIntro from '../components/ui/PageIntro.vue'
+import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
-// @author AI (under P9_Dashboard_FE supervision)
 const REALTIME_INTERVAL_MS = 1000
 const TREND_INTERVAL_MS = 5000
 const HEARTBEAT_INTERVAL_MS = 30000
@@ -126,10 +150,10 @@ function formatRate(val) {
   return Number(val || 0).toFixed(2)
 }
 
-function tagClass(decision) {
-  if (decision === 'BLOCK') return 'danger'
-  if (decision === 'REVIEW') return 'warn'
-  return 'ok'
+function decisionTagClass(decision) {
+  if (decision === 'BLOCK') return 'border-rose-400/20 bg-rose-400/10 text-rose-100'
+  if (decision === 'REVIEW') return 'border-amber-400/20 bg-amber-400/10 text-amber-100'
+  return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100'
 }
 
 function initChart() {
@@ -147,27 +171,28 @@ function initChart() {
       data: ['拦截率%', '待复核量'],
       textStyle: { color: '#bfd2ff' }
     },
+    grid: { left: 36, right: 24, top: 34, bottom: 30 },
     xAxis: {
       type: 'category',
       data: points.x,
-      axisLine: { lineStyle: { color: '#3d5a80' } },
-      axisLabel: { color: '#8ba3c7' }
+      axisLine: { lineStyle: { color: '#334155' } },
+      axisLabel: { color: '#94a3b8' }
     },
     yAxis: [
       {
         type: 'value',
         name: '拦截率%',
         nameTextStyle: { color: '#94a8c8' },
-        axisLine: { lineStyle: { color: '#3d5a80' } },
-        axisLabel: { color: '#8ba3c7' },
-        splitLine: { lineStyle: { color: '#1a2840' } }
+        axisLine: { lineStyle: { color: '#334155' } },
+        axisLabel: { color: '#94a3b8' },
+        splitLine: { lineStyle: { color: '#1e293b' } }
       },
       {
         type: 'value',
         name: '待复核',
         nameTextStyle: { color: '#94a8c8' },
-        axisLine: { lineStyle: { color: '#3d5a80' } },
-        axisLabel: { color: '#8ba3c7' },
+        axisLine: { lineStyle: { color: '#334155' } },
+        axisLabel: { color: '#94a3b8' },
         splitLine: { show: false }
       }
     ],
@@ -178,10 +203,10 @@ function initChart() {
         smooth: true,
         data: points.blockRate,
         yAxisIndex: 0,
-        lineStyle: { color: '#fb7185', width: 3, shadowBlur: 8, shadowColor: 'rgba(251,113,133,0.45)' },
+        lineStyle: { color: '#fb7185', width: 3 },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(251,113,133,0.25)' },
+            { offset: 0, color: 'rgba(255,107,87,0.22)' },
             { offset: 1, color: 'transparent' }
           ])
         }
@@ -192,11 +217,11 @@ function initChart() {
         data: points.review,
         yAxisIndex: 1,
         itemStyle: {
+          borderRadius: [6, 6, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#38bdf8' },
-            { offset: 1, color: '#0369a1' }
-          ]),
-          borderRadius: [4, 4, 0, 0]
+            { offset: 0, color: '#5EE6FF' },
+            { offset: 1, color: '#3B82F6' }
+          ])
         }
       }
     ]
@@ -225,12 +250,12 @@ function renderPlatformChart() {
       borderColor: '#334155',
       textStyle: { color: '#e2e8f0' }
     },
-    grid: { left: 56, right: 18, top: 28, bottom: 28 },
+    grid: { left: 44, right: 18, top: 16, bottom: 28 },
     xAxis: {
       type: 'category',
       data: entries.map((x) => x.name),
       axisLine: { lineStyle: { color: '#334155' } },
-      axisLabel: { color: '#94a3b8', rotate: 14 }
+      axisLabel: { color: '#94a3b8', rotate: 10 }
     },
     yAxis: {
       type: 'value',
@@ -242,16 +267,14 @@ function renderPlatformChart() {
       {
         type: 'bar',
         data: entries.map((x) => x.value),
+        barMaxWidth: 42,
         itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#22d3ee' },
-            { offset: 1, color: '#2563eb' }
-          ]),
           borderRadius: [8, 8, 0, 0],
-          shadowBlur: 14,
-          shadowColor: 'rgba(34, 211, 238, 0.35)'
-        },
-        barMaxWidth: 44
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: '#5EE6FF' },
+            { offset: 1, color: '#3B82F6' }
+          ])
+        }
       }
     ]
   })
@@ -274,10 +297,7 @@ function pushPoint() {
   if (chart) {
     chart.setOption({
       xAxis: { data: points.x },
-      series: [
-        { data: points.blockRate },
-        { data: points.review }
-      ]
+      series: [{ data: points.blockRate }, { data: points.review }]
     })
   }
 }
@@ -292,9 +312,7 @@ function applyMetricsData(data) {
     review: data.review || 0,
     blockRate: data.blockRate || 0,
     latest,
-    hotWords: Array.isArray(data.hotWords)
-      ? filterHotWords(data.hotWords, blockedWordSet)
-      : buildHotWords(latest, blockedWordSet),
+    hotWords: Array.isArray(data.hotWords) ? filterHotWords(data.hotWords, blockedWordSet) : buildHotWords(latest, blockedWordSet),
     platformDistribution: data.platformDistribution || buildPlatformDistribution(latest)
   })
   renderPlatformChart()
@@ -325,13 +343,8 @@ function buildBlockedWordSet(latest) {
 
     const hitWords = tokenizeWords(item?.hitWords)
     const contentWords = tokenizeWords(item?.content)
-
-    for (const word of hitWords) {
-      blockedWords.add(word)
-    }
-    for (const word of contentWords) {
-      blockedWords.add(word)
-    }
+    for (const word of hitWords) blockedWords.add(word)
+    for (const word of contentWords) blockedWords.add(word)
   }
   return blockedWords
 }
@@ -348,17 +361,15 @@ function filterHotWords(hotWords, blockedWordSet) {
 
 function buildHotWords(latest, blockedWordSet) {
   const stopWords = new Set([
-    '的', '了', '是', '在', '和', '就', '都', '这', '那', '你', '我', '他',
-    '她', '它', '我们', '你们', '他们', '一个', '这个', '那个', '还有', '已经',
-    '可以', '一下', '真的', '就是', '然后', '但是', '因为', '所以', 'please',
+    '的', '了', '是', '在', '和', '就', '都', '这', '那', '你', '我', '们',
+    '她', '他', '我们', '你们', '他们', '一个', '这个', '那个', '还有', '已经',
+    '可以', '真的', '就是', '然后', '但是', '因为', '所以', 'please',
     'the', 'and', 'for', 'with', 'that', 'this', 'from'
   ])
   const counter = {}
 
   for (const item of latest) {
-    const words = tokenizeWords(item?.content)
-      .filter((x) => x.length >= 2 && !stopWords.has(x))
-
+    const words = tokenizeWords(item?.content).filter((x) => x.length >= 2 && !stopWords.has(x))
     for (const word of words) {
       counter[word] = (counter[word] || 0) + 1
     }
@@ -373,12 +384,11 @@ function buildHotWords(latest, blockedWordSet) {
 
 function wordStyle(item, idx) {
   const count = Number(item?.count || 0)
-  const size = Math.max(14, Math.min(38, 12 + count * 3))
-  const hue = (idx * 47) % 360
+  const size = Math.max(14, Math.min(32, 12 + count * 2.2))
+  const hue = (idx * 39) % 360
   return {
     fontSize: `${size}px`,
-    color: `hsl(${hue} 72% 62%)`,
-    textShadow: '0 0 18px rgba(34, 211, 238, 0.12)'
+    color: `hsl(${hue} 72% 68%)`
   }
 }
 
@@ -426,9 +436,7 @@ function scheduleReconnect() {
   const delay = Math.min(1000 * (2 ** reconnectTimes), 30000)
   reconnectTimes += 1
 
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-  }
+  if (reconnectTimer) clearTimeout(reconnectTimer)
   reconnectTimer = setTimeout(connectWebSocket, delay)
 }
 
@@ -462,9 +470,7 @@ function connectWebSocket() {
   ws.onerror = () => {
     wsConnected.value = false
     stopHeartbeat()
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.close()
-    }
+    if (ws && ws.readyState === WebSocket.OPEN) ws.close()
   }
 }
 
@@ -539,389 +545,4 @@ onUnmounted(() => {
   window.removeEventListener('resize', resizeChart)
 })
 </script>
-
-<style scoped>
-.board-wrap {
-  --card: rgba(15, 23, 42, 0.65);
-  --card-bd: rgba(56, 189, 248, 0.16);
-  --text: #e2e8f0;
-  --muted: #8ba3c7;
-  min-height: 100vh;
-  padding: 20px 24px 48px;
-  color: var(--text);
-  background:
-    radial-gradient(ellipse 140% 80% at 0% -40%, rgba(34, 211, 238, 0.12), transparent),
-    radial-gradient(ellipse 100% 60% at 100% 0%, rgba(99, 102, 241, 0.1), transparent),
-    linear-gradient(175deg, #020617 0%, #041020 42%, #020617 100%);
-}
-
-.board-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  padding-bottom: 18px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
-}
-
-.head-block {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.live-dot {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  margin-top: 8px;
-  flex-shrink: 0;
-}
-
-.live-dot .solid {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fef08a, #22d3ee);
-  box-shadow: 0 0 16px rgba(34, 211, 238, 0.7);
-}
-
-.live-dot .pulse {
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  background: rgba(34, 211, 238, 0.25);
-  animation: ripple 2s ease-out infinite;
-}
-
-@keyframes ripple {
-  0% {
-    transform: scale(0.85);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(1.85);
-    opacity: 0;
-  }
-}
-
-.titles .eyebrow {
-  margin: 0 0 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-  background: linear-gradient(90deg, #22d3ee, #a78bfa);
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
-
-.titles h1 {
-  margin: 0;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 1.6rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  color: #f8fafc;
-  text-shadow: 0 0 40px rgba(34, 211, 238, 0.15);
-}
-
-.titles .sub {
-  margin: 8px 0 0;
-  font-size: 12px;
-  color: var(--muted);
-  max-width: 420px;
-  line-height: 1.5;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ws-indicator {
-  border-radius: 999px;
-  border: 1px solid rgba(251, 146, 60, 0.45);
-  background: rgba(180, 83, 9, 0.15);
-  color: #fed7aa;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.ws-indicator.online {
-  border-color: rgba(74, 222, 128, 0.55);
-  background: rgba(22, 101, 52, 0.3);
-  color: #bbf7d0;
-}
-
-.board-wrap :deep(.dash-refresh) {
-  --el-button-hover-bg-color: #0891b2;
-  background: linear-gradient(135deg, #22d3ee 0%, #0891b2 100%);
-  border: none;
-  color: #0f172a;
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 9px 20px;
-  box-shadow: 0 8px 24px rgba(34, 211, 238, 0.25);
-}
-
-.kpi-grid {
-  margin-top: 18px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.kpi {
-  position: relative;
-  overflow: hidden;
-  border-radius: 16px;
-  padding: 18px 16px;
-  border: 1px solid var(--card-bd);
-  background:
-    radial-gradient(120% 140% at 0% -20%, rgba(34, 211, 238, 0.08), transparent),
-    linear-gradient(165deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.92));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 12px 32px rgba(0, 0, 0, 0.35);
-  transition: transform 0.2s ease, border-color 0.2s ease;
-}
-
-.kpi::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 14px;
-  right: 14px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.9), transparent);
-}
-
-.kpi:hover {
-  transform: translateY(-2px);
-  border-color: rgba(103, 232, 249, 0.45);
-}
-
-.kpi:nth-child(1)::before {
-  background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.95), transparent);
-}
-
-.kpi:nth-child(2)::before {
-  background: linear-gradient(90deg, transparent, rgba(251, 113, 133, 0.95), transparent);
-}
-
-.label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.val {
-  display: block;
-  margin-top: 10px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.val.warn {
-  color: #fde047;
-  text-shadow: 0 0 24px rgba(250, 204, 21, 0.25);
-}
-.val.danger {
-  color: #fb923c;
-  text-shadow: 0 0 24px rgba(251, 146, 60, 0.3);
-}
-
-.chart-panel {
-  margin-top: 20px;
-  border-radius: 18px;
-  padding: 16px 18px;
-  border: 1px solid var(--card-bd);
-  background: var(--card);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.3);
-}
-
-.chart-panel h3 {
-  margin: 0 0 10px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #cbd5f5;
-}
-
-.chart {
-  height: 288px;
-}
-
-.analysis-grid {
-  margin-top: 16px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
-
-.panel {
-  border-radius: 18px;
-  padding: 16px;
-  border: 1px solid var(--card-bd);
-  background: var(--card);
-  backdrop-filter: blur(12px);
-  min-height: 280px;
-}
-
-.panel h3 {
-  margin: 0 0 6px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.word-cloud {
-  min-height: 220px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 12px;
-  align-content: flex-start;
-  padding-top: 10px;
-}
-
-.word-item {
-  display: inline-flex;
-  align-items: center;
-  line-height: 1.1;
-  font-weight: 700;
-  padding: 2px 4px;
-  transition: transform 0.18s ease;
-}
-
-.word-item:hover {
-  transform: scale(1.05);
-}
-
-.word-empty {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.platform-chart {
-  height: 236px;
-}
-
-.stream-panel {
-  margin-top: 16px;
-  border-radius: 18px;
-  padding: 16px;
-  border: 1px solid rgba(251, 113, 133, 0.12);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.75), rgba(2, 6, 23, 0.85));
-}
-
-.stream-panel h3 {
-  margin: 0 0 10px;
-  font-family: Manrope, Inter, sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.stream-list {
-  max-height: 420px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(56, 189, 248, 0.35) transparent;
-}
-
-.stream-list::-webkit-scrollbar {
-  width: 6px;
-}
-.stream-list::-webkit-scrollbar-thumb {
-  background: rgba(56, 189, 248, 0.35);
-  border-radius: 3px;
-}
-
-.stream-row {
-  display: grid;
-  grid-template-columns: 138px minmax(0, 1fr) 104px;
-  gap: 12px;
-  align-items: center;
-  padding: 11px 10px;
-  border-radius: 10px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-}
-
-.stream-row:nth-child(even) {
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.stream-row:hover {
-  background: rgba(34, 211, 238, 0.06);
-}
-
-.id {
-  color: #cbd5f5;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.txt {
-  font-size: 13px;
-  color: #b8cbdb;
-  line-height: 1.45;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.tag {
-  text-align: center;
-  border-radius: 999px;
-  font-weight: 700;
-  font-size: 11px;
-  padding: 4px 8px;
-  letter-spacing: 0.03em;
-}
-
-.tag.ok {
-  background: rgba(22, 101, 52, 0.45);
-  color: #86efac;
-  border: 1px solid rgba(74, 222, 128, 0.35);
-}
-.tag.warn {
-  background: rgba(161, 98, 7, 0.4);
-  color: #fef08a;
-  border: 1px solid rgba(250, 204, 21, 0.35);
-}
-.tag.danger {
-  background: rgba(127, 29, 29, 0.45);
-  color: #fecaca;
-  border: 1px solid rgba(252, 165, 165, 0.35);
-}
-
-@media (max-width: 1100px) {
-  .kpi-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .analysis-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>
 

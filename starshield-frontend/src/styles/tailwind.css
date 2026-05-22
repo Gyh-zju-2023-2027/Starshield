@@ -1,3 +1,166 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .ss-page {
+    @apply min-h-full px-6 pb-14 pt-8 md:px-9 xl:px-11;
+  }
+
+  .ss-page-intro {
+    @apply mb-8 border-b border-white/10 pb-7;
+  }
+
+  .ss-page-intro__eyebrow {
+    @apply bg-clip-text text-[11px] font-bold uppercase tracking-[0.24em] text-transparent;
+    background-image: linear-gradient(90deg, rgba(94, 230, 255, 0.92), rgba(59, 130, 246, 0.88));
+  }
+
+  .ss-page-intro__title {
+    @apply font-display text-[30px] font-semibold tracking-tight text-slate-50;
+  }
+
+  .ss-page-intro__desc {
+    @apply mt-3 max-w-3xl text-sm leading-7;
+    color: var(--text-secondary);
+  }
+
+  .ss-surface {
+    @apply rounded-[28px] p-6 shadow-[0_28px_64px_-28px_rgba(15,23,42,0.88)] backdrop-blur-xl;
+    border: 1px solid var(--border-soft);
+    background: rgba(17, 24, 39, 0.74);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 28px 64px -28px rgba(4, 10, 24, 0.92);
+  }
+
+  .ss-surface--muted {
+    background: rgba(10, 16, 32, 0.82);
+  }
+
+  .ss-surface--dense {
+    @apply p-4;
+  }
+
+  .ss-metric-card {
+    @apply relative overflow-hidden rounded-3xl px-5 py-4 transition duration-200;
+    border: 1px solid var(--border-soft);
+    background: rgba(21, 30, 47, 0.82);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  }
+
+  .ss-metric-card::before {
+    content: '';
+    @apply absolute inset-x-5 top-0 h-px rounded-full bg-gradient-to-r from-transparent to-transparent;
+    background-image: linear-gradient(90deg, transparent, rgba(94, 230, 255, 0.78), transparent);
+  }
+
+  .ss-metric-card__label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em];
+    color: var(--text-muted);
+  }
+
+  .ss-metric-card__value {
+    @apply mt-3 font-display text-[30px] font-semibold tracking-tight text-slate-50;
+  }
+
+  .ss-metric-card__helper {
+    @apply mt-2 text-xs;
+    color: var(--text-muted);
+  }
+
+  .ss-metric-card__icon {
+    @apply rounded-2xl bg-white/5 p-2 text-[22px] text-slate-300;
+    border: 1px solid var(--border-soft);
+  }
+
+  .ss-metric-card--cyan::before {
+    background-image: linear-gradient(90deg, transparent, rgba(94, 230, 255, 0.84), transparent);
+  }
+
+  .ss-metric-card--rose::before {
+    background-image: linear-gradient(90deg, transparent, rgba(255, 107, 87, 0.82), transparent);
+  }
+
+  .ss-metric-card--amber::before {
+    background-image: linear-gradient(90deg, transparent, rgba(247, 185, 85, 0.82), transparent);
+  }
+
+  .ss-metric-card--violet::before {
+    background-image: linear-gradient(90deg, transparent, rgba(108, 99, 255, 0.8), transparent);
+  }
+
+  .ss-chip {
+    @apply inline-flex items-center gap-2 rounded-full bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-slate-300;
+    border: 1px solid var(--border-soft);
+  }
+
+  .ss-chip--accent {
+    background: rgba(94, 230, 255, 0.1);
+    border-color: rgba(94, 230, 255, 0.22);
+    color: #d9f9ff;
+  }
+
+  .ss-button-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold text-white transition duration-200;
+    border: 1px solid rgba(94, 230, 255, 0.14);
+    background: var(--primary);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.1),
+      0 18px 34px -22px rgba(59, 130, 246, 0.72);
+  }
+
+  .ss-button-primary:hover {
+    background: var(--primary-strong);
+    transform: translateY(-1px);
+  }
+
+  .ss-button-primary:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .ss-button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium text-slate-200 transition duration-200;
+    border: 1px solid var(--border-soft);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .ss-button-secondary:hover {
+    border-color: rgba(120, 160, 220, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .ss-muted-grid {
+    @apply grid gap-4 md:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .ss-toolbar {
+    @apply mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-5;
+  }
+
+  .ss-section-title {
+    @apply font-display text-base font-semibold text-slate-100;
+  }
+
+  .ss-section-copy {
+    @apply mt-1 text-xs leading-6;
+    color: var(--text-muted);
+  }
+
+  .ss-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+  }
+
+  .ss-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .ss-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.24);
+  }
+}

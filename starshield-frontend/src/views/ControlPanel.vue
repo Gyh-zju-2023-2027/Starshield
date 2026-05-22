@@ -1,78 +1,103 @@
 <template>
-  <div class="min-h-full bg-[#020617] px-6 pb-14 pt-9 md:px-11">
-    <header class="mb-10 max-w-5xl border-b border-white/10 pb-8">
-      <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/90">Aether Command · Rule Console</p>
-      <h1 class="mt-2 font-display text-2xl font-semibold text-slate-100">规则控制台</h1>
-      <p class="mt-2 max-w-2xl text-sm leading-relaxed text-slate-400">
-        敏感词列表与 Prompt 热更新，对齐下游 LLM / 过滤引擎运行时配置。
-      </p>
-    </header>
+  <div class="ss-page">
+    <PageIntro
+      eyebrow="Aether Command | Rule Console"
+      title="规则控制台"
+      description="在这里维护敏感词规则和审核 Prompt。两个模块保持相同的信息层级，方便并排编辑和快速发布。"
+    >
+      <template #meta>
+        <div class="grid min-w-[260px] grid-cols-2 gap-3">
+          <MetricCard label="词库词条" :value="wordChipPreview.length" helper="当前预览数量" icon="policy" />
+          <MetricCard label="Prompt" :value="promptText ? '已加载' : '未加载'" helper="运行时版本" icon="terminal" accent="amber" />
+        </div>
+      </template>
+    </PageIntro>
 
     <div class="grid gap-6 xl:grid-cols-2">
-      <!-- security / 词条 -->
-      <section
-        class="flex flex-col rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 to-[#070b18] p-7 shadow-xl ring-1 ring-cyan-500/10 backdrop-blur-[10px]"
-      >
-        <div class="mb-6 flex flex-wrap items-start gap-4">
-          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-500/25 bg-violet-950/60 text-violet-300 ring-1 ring-violet-500/15">
+      <SurfacePanel class="flex h-full flex-col">
+        <div class="mb-4 grid grid-cols-[48px_minmax(0,1fr)] items-center gap-4">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-sky-400/18 bg-sky-400/[0.08] text-sky-200 ring-1 ring-sky-400/10">
             <span class="material-symbols-outlined text-[28px]">security</span>
           </div>
-          <div>
-            <h2 class="font-display text-lg font-semibold text-slate-100">敏感词管理</h2>
-            <p class="mt-1 text-xs text-slate-400">{{ wordChipPreview.length }} 个词条（节选预览）</p>
+          <div class="min-w-0 self-center">
+            <h2 class="font-display text-lg font-semibold leading-5 text-slate-100">敏感词词库</h2>
+            <p class="mt-1 text-xs leading-4 text-slate-400">每行一条，保存后会覆盖当前规则集。</p>
           </div>
         </div>
-        <div class="mb-4 flex flex-wrap gap-2">
+
+        <div class="mb-4 flex min-h-[56px] flex-wrap content-start gap-2">
           <span
-            v-for="(w, i) in wordChipPreview.slice(0, 12)"
-            :key="i"
-            class="rounded-full border border-white/[0.08] bg-slate-950/60 px-3 py-1 text-xs font-medium text-slate-300 ring-1 ring-white/[0.04]"
+            v-for="(word, index) in wordChipPreview"
+            :key="`${word}-${index}`"
+            class="rounded-2xl border border-white/[0.08] bg-slate-950/60 px-3 py-1.5 text-xs font-medium leading-none text-slate-300 ring-1 ring-white/[0.04]"
           >
-            {{ w }}
+            {{ word }}
           </span>
         </div>
-        <el-input v-model="wordsText" type="textarea" :rows="10" placeholder="每行一个词，支持批量粘贴" />
-        <el-button type="primary" round class="mt-5 self-start px-8 !py-6 !font-semibold shadow-md" @click="saveWords">
-          <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">cloud_upload</span>
-          更新词库
-        </el-button>
-      </section>
 
-      <!-- prompt / terminal -->
-      <section
-        class="flex flex-col rounded-3xl border border-slate-700/80 bg-gradient-to-br from-slate-950 via-slate-900 to-[#051018] p-7 text-slate-100 shadow-2xl ring-1 ring-cyan-500/10"
-      >
-        <div class="mb-5 flex flex-wrap items-center gap-3">
-          <span class="material-symbols-outlined text-cyan-300">terminal</span>
-          <h2 class="font-display text-lg font-semibold tracking-tight">系统 Prompt · 热替换</h2>
-        </div>
-        <p class="mb-4 font-mono text-[11px] uppercase tracking-[0.2em] text-cyan-200/70">prompt.config · live-edit</p>
-        <el-input v-model="promptText" type="textarea" :rows="16" placeholder="写入审核 Prompt / JSON 皆可" class="prompt-dark" />
+        <el-input
+          v-model="wordsText"
+          type="textarea"
+          :rows="14"
+          placeholder="每行一个词，支持批量粘贴"
+          class="console-textarea"
+        />
+
         <el-button
           type="primary"
-          plain
-          class="mt-6 self-start rounded-full !border-emerald-500/70 !bg-emerald-950/90 !font-semibold !text-emerald-100"
+          class="ss-button-primary mt-5 self-start !rounded-2xl !border-none !px-6 !py-6 !font-semibold"
+          @click="saveWords"
+        >
+          <span class="material-symbols-outlined text-lg leading-none">cloud_upload</span>
+          更新词库
+        </el-button>
+      </SurfacePanel>
+
+      <SurfacePanel class="flex h-full flex-col">
+        <div class="mb-4 grid grid-cols-[48px_minmax(0,1fr)] items-center gap-4">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-sky-400/18 bg-sky-400/[0.08] text-sky-200 ring-1 ring-sky-400/10">
+            <span class="material-symbols-outlined text-[28px]">terminal</span>
+          </div>
+          <div class="min-w-0 self-center">
+            <h2 class="font-display text-lg font-semibold leading-5 text-slate-100">系统 Prompt 热替换</h2>
+            <p class="mt-1 text-xs leading-4 text-slate-400">支持直接编辑运行中的审核 Prompt 或 JSON 配置。</p>
+          </div>
+        </div>
+
+        <div class="mb-4 flex min-h-[56px] items-center text-[11px] uppercase tracking-[0.2em] text-slate-500">
+          prompt.config | live-edit
+        </div>
+
+        <el-input
+          v-model="promptText"
+          type="textarea"
+          :rows="14"
+          placeholder="写入审核 Prompt / JSON 均可"
+          class="console-textarea"
+        />
+
+        <el-button
+          type="primary"
+          class="ss-button-primary mt-5 self-start !rounded-2xl !border-none !px-6 !py-6 !font-semibold"
           @click="savePrompt"
         >
-          <span class="material-symbols-outlined mr-2 align-middle text-lg">rocket_launch</span>
-          部署变更
+          <span class="material-symbols-outlined text-lg leading-none">rocket_launch</span>
+          发布变更
         </el-button>
-      </section>
+      </SurfacePanel>
     </div>
 
-    <aside class="mt-8 rounded-3xl border border-white/10 bg-slate-900/70 px-6 py-5 ring-1 ring-white/[0.06] backdrop-blur-[8px]">
+    <SurfacePanel dense class="mt-8">
       <div class="flex flex-wrap items-center justify-between gap-4 text-sm">
         <div class="flex items-center gap-2 text-slate-400">
-          <span class="material-symbols-outlined text-cyan-500/90">insights</span>
-          <span>配置将同步至网关；生产环境请以版本发布为准。</span>
+          <span class="material-symbols-outlined text-sky-300">insights</span>
+          <span>配置会同步到网关。生产环境建议按版本发布，避免多人同时覆盖。</span>
         </div>
-        <span
-          class="rounded-full border border-emerald-500/30 bg-emerald-950/50 px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-emerald-300 ring-1 ring-emerald-500/20"
-        >
-          Architectural Integrity OK
+        <span class="rounded-full border border-sky-400/18 bg-sky-400/[0.08] px-4 py-1.5 text-xs font-bold uppercase tracking-wide text-sky-100 ring-1 ring-sky-400/10">
+          Rules Synced View
         </span>
       </div>
-    </aside>
+    </SurfacePanel>
   </div>
 </template>
 
@@ -80,6 +105,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getPrompt, getSensitiveWords, updatePrompt, updateSensitiveWords } from '../api/control'
+import MetricCard from '../components/ui/MetricCard.vue'
+import PageIntro from '../components/ui/PageIntro.vue'
+import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
 const wordsText = ref('')
 const promptText = ref('')
@@ -87,26 +115,28 @@ const promptText = ref('')
 const wordChipPreview = computed(() =>
   wordsText.value
     .split('\n')
-    .map((x) => x.trim())
+    .map((item) => item.trim())
     .filter(Boolean)
-    .slice(0, 32)
 )
 
 async function load() {
-  const [w, p] = await Promise.all([getSensitiveWords(), getPrompt()])
-  if (w.code === 200) {
-    wordsText.value = (w.data || []).join('\n')
+  const [wordsRes, promptRes] = await Promise.all([getSensitiveWords(), getPrompt()])
+
+  if (wordsRes.code === 200) {
+    wordsText.value = (wordsRes.data || []).join('\n')
   }
-  if (p.code === 200) {
-    promptText.value = p.data?.prompt || ''
+
+  if (promptRes.code === 200) {
+    promptText.value = promptRes.data?.prompt || ''
   }
 }
 
 async function saveWords() {
   const words = wordsText.value
     .split('\n')
-    .map((x) => x.trim())
+    .map((item) => item.trim())
     .filter(Boolean)
+
   const res = await updateSensitiveWords(words)
   if (res.code === 200) {
     ElMessage.success('敏感词已更新')
@@ -124,13 +154,22 @@ onMounted(load)
 </script>
 
 <style scoped>
-:deep(.prompt-dark .el-textarea__inner) {
-  background: #0b1324 !important;
-  color: #e2e8f0 !important;
-  border: 1px solid #1e293b !important;
-  border-radius: 12px !important;
-  font-family: ui-monospace, JetBrains Mono, monospace;
+:deep(.console-textarea .el-textarea__inner) {
+  min-height: 340px !important;
+  background: rgba(7, 11, 22, 0.92) !important;
+  color: #eaf2ff !important;
+  border: 1px solid rgba(120, 160, 220, 0.18) !important;
+  border-radius: 20px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', monospace;
   font-size: 12px !important;
-  line-height: 1.55 !important;
+  line-height: 1.65 !important;
+}
+
+:deep(.console-textarea .el-textarea__inner:focus) {
+  border-color: rgba(94, 230, 255, 0.3) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(94, 230, 255, 0.14) !important;
 }
 </style>
