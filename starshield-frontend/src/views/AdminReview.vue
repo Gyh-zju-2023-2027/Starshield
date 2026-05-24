@@ -1,31 +1,27 @@
 <template>
-  <div class="min-h-full bg-[#020617] px-6 pb-14 pt-9 md:px-11">
-    <!-- 审核后台：标题 + 说明 -->
-    <header class="mb-8 flex flex-wrap items-start justify-between gap-6 border-b border-white/10 pb-7">
-      <div class="max-w-3xl">
-        <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/90">Aether Command · Moderation</p>
-        <h1 class="mt-2 font-display text-2xl font-semibold tracking-tight text-slate-100">待审核队列</h1>
-        <p class="mt-2 text-sm leading-relaxed text-slate-400">
-          当前有风险记录待处理，请及时审核并采取封禁或解除动作。
-        </p>
-      </div>
-      <div class="rounded-xl border border-cyan-500/25 bg-cyan-950/40 px-5 py-3 text-right ring-1 ring-cyan-500/10">
-        <p class="font-display text-2xl font-bold text-cyan-200">{{ rows.length }}</p>
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-cyan-400/90">待处理条目</p>
-      </div>
-    </header>
-
-    <div
-      class="rounded-3xl border border-white/10 bg-slate-900/70 p-7 shadow-xl backdrop-blur-[10px] ring-1 ring-white/[0.06]"
+  <div class="ss-page">
+    <PageIntro
+      eyebrow="Aether Command · Moderation"
+      title="待审核队列"
+      description="这里是运营同学的处理工作面。我们把风险记录、理由标签、批量动作和审计时间线都收在同一条流里。"
     >
-      <div class="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+      <template #meta>
+        <MetricCard label="待处理条目" :value="rows.length" helper="当前待复核队列" icon="fact_check" />
+      </template>
+    </PageIntro>
+
+    <SurfacePanel>
+      <div class="ss-toolbar">
         <div class="flex flex-wrap items-center gap-2">
-          <el-button plain round disabled class="!font-medium">
+          <span class="ss-chip">人工复核</span>
+          <span class="ss-chip">批量动作</span>
+          <span class="ss-chip">审计时间线</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <el-button plain round disabled class="!border-white/10 !bg-white/[0.03] !font-medium !text-slate-400">
             <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">filter_list</span>
             筛选
           </el-button>
-        </div>
-        <div class="flex flex-wrap gap-2">
           <el-button type="primary" round @click="loadData">
             <span class="material-symbols-outlined mr-1 align-middle text-lg leading-none">refresh</span>
             刷新
@@ -74,7 +70,7 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="selected.length > 0" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full border border-white/10 bg-slate-900/90 px-6 py-3 shadow-2xl backdrop-blur-md ring-1 ring-white/5">
+      <div v-if="selected.length > 0" class="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-full border border-white/10 bg-slate-900/90 px-6 py-3 shadow-2xl backdrop-blur-md ring-1 ring-white/5">
         <span class="text-sm font-medium text-slate-300">
           已选 <b class="text-cyan-400">{{ selected.length }}</b> 条
         </span>
@@ -89,7 +85,7 @@
           加入观察名单
         </el-button>
       </div>
-    </div>
+    </SurfacePanel>
 
     <el-dialog v-model="reasonDialogVisible" title="选择理由" width="400px" custom-class="!bg-slate-900 !border !border-white/10" destroy-on-close>
       <div class="flex flex-wrap gap-2 mb-4">
@@ -168,6 +164,9 @@
 import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { confirmBan, fetchAuditLogs, fetchPending, releaseRecord, batchProcess } from '../api/admin'
+import MetricCard from '../components/ui/MetricCard.vue'
+import PageIntro from '../components/ui/PageIntro.vue'
+import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
 const rows = ref([])
 const selected = ref([])

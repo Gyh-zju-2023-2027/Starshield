@@ -1,18 +1,24 @@
-<template>
-  <div class="min-h-full bg-[#020617] px-6 pb-14 pt-8 md:px-11">
-    <header class="mb-10 border-b border-white/10 pb-8">
-      <p class="text-[11px] font-bold uppercase tracking-[0.22em] text-cyan-400/90">Aether Command · Load Test</p>
-      <h1 class="mt-2 font-display text-2xl font-semibold text-slate-100">压测入口 · 发射控制台</h1>
-      <p class="mt-2 max-w-xl text-sm text-slate-400">
-        将并发请求发往星盾接入层，校验 MQ / 消费者在高压下的吞吐与稳定性。
-      </p>
-    </header>
+﻿<template>
+  <div class="ss-page">
+    <PageIntro
+      eyebrow="Aether Command · Load Test"
+      title="压测入口"
+      description="在前端直接配置并发批次、平台来源和语料模式，快速观察接入层在压力下的吞吐、稳定性与返回日志。"
+    >
+      <template #meta>
+        <div class="grid min-w-[240px] grid-cols-2 gap-3">
+          <MetricCard label="总请求数" :value="config.total" helper="单次发射规模" icon="bolt" />
+          <MetricCard label="批大小" :value="config.batchSize" helper="单批并发量" icon="stacks" accent="amber" />
+        </div>
+      </template>
+    </PageIntro>
 
-    <div class="mx-auto max-w-3xl space-y-8">
-      <section
-        class="rounded-3xl border border-cyan-500/15 bg-gradient-to-br from-slate-900/85 to-[#070b18] p-8 shadow-[0_24px_64px_-20px_rgba(0,0,0,0.55)] backdrop-blur-[10px]"
-      >
-        <h2 class="font-display text-sm font-semibold uppercase tracking-[0.15em] text-slate-400">发射参数配置</h2>
+    <div class="space-y-6">
+      <SurfacePanel>
+        <div class="mb-6">
+          <h2 class="ss-section-title">发射参数配置</h2>
+          <p class="ss-section-copy">建议先用内置随机语料验证链路，再切换到真实文案回放，避免第一轮测试就把问题藏起来。</p>
+        </div>
         <div class="mt-8 grid gap-8 sm:grid-cols-3">
           <div class="flex flex-col gap-2">
             <label class="text-[11px] font-bold uppercase tracking-wide text-slate-500">并发请求总数</label>
@@ -68,12 +74,12 @@
             class="!font-mono text-[13px] leading-relaxed"
           />
         </div>
-      </section>
+      </SurfacePanel>
 
-      <section class="flex justify-center">
+      <section>
         <button
           type="button"
-          class="group relative flex w-full max-w-xl overflow-hidden rounded-2xl bg-gradient-to-r from-indigo-600 via-[#4e4af2] to-violet-600 px-8 py-5 text-center text-[15px] font-semibold tracking-wide text-white shadow-[0_20px_50px_-12px_rgba(78,74,242,0.65)] ring-2 ring-white/25 transition hover:brightness-105 disabled:opacity-85"
+          class="ss-button-primary group relative flex w-full overflow-hidden rounded-[28px] px-8 py-5 text-center text-[15px] font-semibold tracking-wide text-white transition hover:brightness-105 disabled:opacity-85"
           :disabled="running"
           @click="startTest"
         >
@@ -89,43 +95,42 @@
             正在发射中… {{ stats.success + stats.fail }} / {{ config.total }}
           </span>
           <span v-else class="inline-flex w-full items-center justify-center gap-2">
-            <span class="material-symbols-outlined text-2xl text-emerald-200">verified</span>
+            <span class="material-symbols-outlined text-2xl text-sky-100">verified</span>
             测试完成 · 点击再次发射
           </span>
         </button>
       </section>
 
-      <section
-        v-if="stats.done || running"
-        class="rounded-3xl border border-white/10 bg-slate-900/65 p-8 shadow-xl backdrop-blur-[10px] ring-1 ring-white/[0.06]"
-      >
-        <h2 class="font-display text-sm font-semibold uppercase tracking-[0.15em] text-slate-400">实时统计</h2>
-        <div class="mt-8 grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          <div
+      <SurfacePanel v-if="stats.done || running">
+        <div class="mb-5">
+          <h2 class="ss-section-title">实时统计</h2>
+          <p class="ss-section-copy">这里是当前这一轮压测的即时结果。异常响应会同步落到下方日志流。</p>
+        </div>
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <MetricCard
             v-for="cell in statsCells"
             :key="cell.key"
-            class="rounded-2xl border border-white/[0.08] bg-slate-950/60 px-4 py-4 text-center shadow-inner"
-          >
-            <div class="font-display text-2xl font-bold tracking-tight" :class="cell.colorClass">{{ cell.val }}</div>
-            <div class="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{{ cell.label }}</div>
-          </div>
+            :label="cell.label"
+            :value="cell.val"
+            :accent="cell.accent"
+          />
         </div>
         <div class="mt-8">
           <div class="mb-2 h-2 overflow-hidden rounded-full bg-slate-800/90">
             <div
-              class="h-full rounded-full bg-gradient-to-r from-[#4e4af2] via-indigo-500 to-emerald-400 transition-[width] duration-300"
+              class="h-full rounded-full bg-[linear-gradient(90deg,#3b82f6_0%,#5ee6ff_100%)] transition-[width] duration-300"
               :style="{ width: `${progressPercent}%` }"
             />
           </div>
           <p class="text-right text-xs font-medium text-slate-500">{{ progressPercent }}%</p>
         </div>
-      </section>
+      </SurfacePanel>
 
-      <section
+      <SurfacePanel
         v-if="logs.length > 0"
-        class="overflow-hidden rounded-3xl bg-slate-950 text-left ring-2 ring-slate-800 shadow-2xl"
+        tone="muted"
       >
-        <div class="flex items-center justify-between border-b border-slate-700/70 bg-slate-900 px-6 py-3">
+        <div class="-mx-6 -mt-6 flex items-center justify-between border-b border-slate-700/70 bg-slate-900/80 px-6 py-4">
           <div class="flex items-center gap-2 text-emerald-300">
             <span class="material-symbols-outlined">terminal</span>
             <span class="font-display text-xs font-semibold uppercase tracking-[0.2em]">Request Log Stream</span>
@@ -138,11 +143,11 @@
             清空
           </button>
         </div>
-        <div ref="logContainer" class="max-h-[320px] overflow-y-auto px-6 py-4 font-mono text-[11px] leading-relaxed">
+        <div ref="logContainer" class="ss-scrollbar max-h-[320px] overflow-y-auto px-1 pt-5 font-mono text-[11px] leading-relaxed">
           <div
             v-for="(entry, i) in logs"
             :key="i"
-            class="border-b border-slate-800/60 py-1.5 text-slate-300 last:border-0"
+            class="border-b border-slate-800/60 px-1 py-2 text-slate-300 last:border-0"
             :class="{
               '!text-emerald-400': entry.type === 'success',
               '!text-amber-300': entry.type === 'warn',
@@ -153,7 +158,7 @@
             <span>{{ entry.msg }}</span>
           </div>
         </div>
-      </section>
+      </SurfacePanel>
     </div>
   </div>
 </template>
@@ -161,6 +166,9 @@
 <script setup>
 import { computed, reactive, ref, nextTick } from 'vue'
 import { uploadChatMessage } from '../api/chat.js'
+import MetricCard from '../components/ui/MetricCard.vue'
+import PageIntro from '../components/ui/PageIntro.vue'
+import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
 const contentMode = ref('pool')
 const realLinesText = ref('')
@@ -203,37 +211,37 @@ const statsCells = computed(() => [
     key: 'ok',
     val: stats.success,
     label: '成功',
-    colorClass: 'text-emerald-400'
+    accent: 'cyan'
   },
   {
     key: 'fail',
     val: stats.fail,
     label: '失败',
-    colorClass: 'text-rose-400'
+    accent: 'rose'
   },
   {
     key: 'sent',
     val: stats.success + stats.fail,
     label: '已发送',
-    colorClass: 'text-cyan-300'
+    accent: 'amber'
   },
   {
     key: 'time',
     val: `${stats.duration} ms`,
     label: '耗时',
-    colorClass: 'text-amber-300'
+    accent: 'amber'
   },
   {
     key: 'qps',
     val: stats.qps,
     label: 'QPS（估）',
-    colorClass: 'text-violet-300'
+    accent: 'cyan'
   },
   {
     key: 'rate',
     val: `${stats.successRate}%`,
     label: '成功率',
-    colorClass: parseFloat(stats.successRate) < 90 ? 'text-rose-400' : 'text-emerald-400'
+    accent: parseFloat(stats.successRate) < 90 ? 'rose' : 'cyan'
   }
 ])
 
@@ -364,3 +372,4 @@ async function startTest() {
   )
 }
 </script>
+
