@@ -35,7 +35,9 @@ import requests
 LOGGER = logging.getLogger("bilichat_ingest")
 
 VIEW_URL = "https://api.bilibili.com/x/web-interface/view"
-REPLY_URL = "https://api.bilibili.com/x/v2/reply"
+# 2025 起老接口 /x/v2/reply 单页只放 3 条置顶热评，必须走「懒加载游标」新接口
+# /x/v2/reply/main：next=页号(从0开始)，mode=2(按时间)|3(按热度)，ps 上限 20
+REPLY_URL = "https://api.bilibili.com/x/v2/reply/main"
 DEFAULT_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -105,15 +107,23 @@ def iter_root_replies_page(
 
     @author AI (under P3 supervision)
     """
-    params = {"type": 1, "oid": aid, "pn": pn, "ps": ps, "sort": sort}
+    # 新接口字段：mode 替代 sort（2=时间, 3=热度），next 替代 pn（从 0 开始）
+    params = {"type": 1, "oid": aid, "mode": sort, "next": pn, "ps": ps, "plat": 1}
     resp = sess.get(REPLY_URL, params=params, timeout=timeout)
     resp.raise_for_status()
     body = resp.json()
     if body.get("code") != 0:
-        raise RuntimeError(f"reply code={body.get('code')} pn={pn} message={body.get('message')}")
+        raise RuntimeError(f"reply code={body.get('code')} next={pn} message={body.get('message')}")
     data = body.get("data") or {}
     replies = data.get("replies") or []
-    page = data.get("page") or {}
+    cursor = data.get("cursor") or {}
+    # 把 cursor 包装成原 page 字段的语义，调用方无需改
+    page = {
+        "count": cursor.get("all_count"),
+        "size": ps,
+        "is_end": cursor.get("is_end"),
+        "next": cursor.get("next"),
+    }
     return replies, page
 
 
@@ -132,16 +142,17 @@ def walk_root_replies(
     @author AI (under P3 supervision)
     """
     seen_rpid = set()
-    for pn in range(1, max_pages + 1):
+    # 新接口 next 从 0 开始，0 这一页等价于"首页热评"，1/2/3... 才是连续翻页
+    for pn in range(0, max_pages):
         try:
             replies, page = iter_root_replies_page(sess, aid, pn, ps, sort)
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("[BiliFetch] bvid=%s pn=%s 拉取失败: %s", bvid, pn, exc)
+            LOGGER.warning("[BiliFetch] bvid=%s next=%s 拉取失败: %s", bvid, pn, exc)
             time.sleep(sleep_sec * 2)
             continue
 
         if not replies:
-            LOGGER.info("[BiliFetch] bvid=%s pn=%s 空页，提前停止", bvid, pn)
+            LOGGER.info("[BiliFetch] bvid=%s next=%s 空页，提前停止", bvid, pn)
             break
 
         new_count = 0
@@ -164,16 +175,20 @@ def walk_root_replies(
             new_count += 1
 
         LOGGER.info(
-            "[BiliFetch] bvid=%s pn=%s 拉到 %s 条新评论 (累计 rpid=%s)",
+            "[BiliFetch] bvid=%s next=%s 拉到 %s 条新评论 (累计 rpid=%s, all_count=%s)",
             bvid,
             pn,
             new_count,
             len(seen_rpid),
+            page.get("count") if isinstance(page, dict) else None,
         )
 
-        # 触底：page.count 是评论总数，page.size 是每页条数
+        # 触底优先看 cursor.is_end；其次按 all_count 估算
+        if isinstance(page, dict) and page.get("is_end"):
+            LOGGER.info("[BiliFetch] bvid=%s 触底 is_end=True，停止翻页", bvid)
+            break
         total = page.get("count") if isinstance(page, dict) else None
-        if isinstance(total, int) and pn * ps >= total:
+        if isinstance(total, int) and (pn + 1) * ps >= total:
             break
 
         time.sleep(sleep_sec)
@@ -461,7 +476,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--target-count", type=int, default=10000, help="累计抓取多少条评论后停止（默认 10000）")
     p.add_argument("--ps", type=int, default=20, help="B 站每页条数（2024 起 /x/v2/reply 上限收紧到 20）")
-    p.add_argument("--sort", type=int, default=2, help="排序：0=按时间, 1=按点赞, 2=按热度")
+    p.add_argument("--sort", type=int, default=3, help="新接口 mode：2=按时间, 3=按热度（默认 3）")
     p.add_argument("--max-pages", type=int, default=200, help="单个 BV 最多翻多少页")
     p.add_argument(
         "--sleep-between-pages",
