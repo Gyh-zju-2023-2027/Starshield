@@ -27,10 +27,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import requests
+
+CST = timezone(timedelta(hours=8))
 
 LOGGER = logging.getLogger("bilichat_ingest")
 
@@ -165,12 +168,15 @@ def walk_root_replies(
             if not text:
                 continue
             mid = (reply.get("member") or {}).get("mid") or "anon"
+            # ctime 是 B 站评论发表时间（秒级 unix 时间戳），下游用它做"按日分布"
+            ctime = reply.get("ctime")
             yield {
                 "bvid": bvid,
                 "aid": aid,
                 "rpid": rpid,
                 "mid": str(mid),
                 "text": text,
+                "ctime": ctime if isinstance(ctime, int) else None,
             }
             new_count += 1
 
@@ -228,6 +234,22 @@ class PostStats:
     success: int = 0
     rate_limited: int = 0
     failed: int = 0
+
+
+def fmt_create_time(ctime: Optional[int]) -> Optional[str]:
+    """B 站评论的 ctime（秒级 unix 时间戳） → 上海时区 'YYYY-MM-DD HH:MM:SS' 字符串。
+
+    必须与后端 ChatMessageLog.createTime 的 @JsonFormat(pattern="yyyy-MM-dd HH:mm:ss",
+    timezone="Asia/Shanghai") 严格对齐，否则 Jackson 反序列化会抛错而落到默认 now()。
+
+    @author AI (under P3 supervision)
+    """
+    if not ctime:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ctime), tz=CST).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
 
 
 def post_chat(
@@ -385,6 +407,10 @@ def push_to_backend(
             "content": text,
             "platform": platform,
         }
+        # 把评论真实发表时间带给后端；缺失则由 MyBatis-Plus 的 strictInsertFill 退回 now()
+        create_time = fmt_create_time(record.get("ctime"))
+        if create_time:
+            payload["createTime"] = create_time
         for attempt in range(max_retries + 1):
             bucket.acquire()
             ok, msg = post_chat(sess, base_url, payload, timeout=request_timeout)
