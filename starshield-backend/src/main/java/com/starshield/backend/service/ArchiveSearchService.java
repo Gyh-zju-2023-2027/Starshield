@@ -19,6 +19,8 @@ import com.starshield.backend.dto.ArchiveSearchHit;
 import com.starshield.backend.entity.ChatMessageLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -38,6 +40,7 @@ import java.util.stream.Collectors;
  * 检索服务（ES 优先，MySQL 兜底）。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ArchiveSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(ArchiveSearchService.class);

@@ -3,6 +3,8 @@ package com.starshield.backend.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.starshield.backend.common.Result;
 import com.starshield.backend.entity.ChatMessageLog;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.Map;
  * 大屏指标聚合支持服务。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class DashboardControllerSupport {
 
     private final ChatMessageService chatMessageService;

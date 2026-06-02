@@ -2,6 +2,8 @@ package com.starshield.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.model.AiModerationResult;
 import com.starshield.backend.model.ModerationDecision;
 import org.slf4j.Logger;
@@ -26,6 +28,7 @@ import java.util.function.Supplier;
  * AI 大模型分析服务。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
 public class AiAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);

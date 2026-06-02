@@ -1,6 +1,8 @@
 package com.starshield.backend.controller;
 
 import com.starshield.backend.common.Result;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.entity.ModerationAuditLog;
 import com.starshield.backend.service.AdminReviewService;
@@ -16,6 +18,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/moderation")
 @CrossOrigin(origins = "*")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class AdminModerationController {
 
     private final AdminReviewService adminReviewService;

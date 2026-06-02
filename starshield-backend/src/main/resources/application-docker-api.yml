@@ -1,0 +1,20 @@
+# 运营 API 微服务：管理 / 检索 / 大屏 / WebSocket
+spring:
+  config:
+    activate:
+      on-profile: docker-api
+
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+starshield:
+  runtime:
+    mode: api
+
+server:
+  tomcat:
+    threads:
+      max: 150
+      min-spare: 20

@@ -3,6 +3,8 @@ package com.starshield.backend.consumer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
 import com.starshield.backend.config.RabbitMQConfig;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.model.AiModerationResult;
 import com.starshield.backend.model.FastCheckResult;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Component;
  * 玩家发言消息消费者。
  */
 @Component
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
 public class ChatMessageConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(ChatMessageConsumer.class);

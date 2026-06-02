@@ -3,6 +3,8 @@ package com.starshield.backend.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starshield.backend.common.Result;
 import com.starshield.backend.config.DashboardWebSocketHandler;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -10,6 +12,7 @@ import org.springframework.stereotype.Service;
  * 大屏指标推送服务。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class DashboardPushService {
 
     private final DashboardWebSocketHandler webSocketHandler;

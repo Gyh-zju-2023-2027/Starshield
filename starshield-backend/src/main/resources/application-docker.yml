@@ -1,0 +1,49 @@
+# Docker 公共配置（与 docker-compose 联用）
+spring:
+  config:
+    activate:
+      on-profile: docker
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:3306/${MYSQL_DATABASE:starshield}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:starshield}
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+  redis:
+    host: ${REDIS_HOST:redis}
+    port: 6379
+
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://elasticsearch:9200}
+
+starshield:
+  archive:
+    es-enabled: ${STARSHIELD_ES_ENABLED:false}
+  ai:
+    provider: ${STARSHIELD_AI_PROVIDER:lightweight}
+    lightweight-url: ${STARSHIELD_AI_LIGHTWEIGHT_URL:http://ai-service:5050/score}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.starshield: info
+    org.springframework.amqp: warn
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

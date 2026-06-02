@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starshield.backend.common.Result;
 import com.starshield.backend.config.RabbitMQConfig;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.service.IngestionRateLimiterService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/chat")
 @CrossOrigin(origins = "*")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.INGEST})
 public class ChatMessageController {
 
     private static final Logger log = LoggerFactory.getLogger(ChatMessageController.class);

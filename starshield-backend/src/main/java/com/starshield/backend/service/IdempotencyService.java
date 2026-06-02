@@ -1,5 +1,7 @@
 package com.starshield.backend.service;
 
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -10,6 +12,7 @@ import java.util.concurrent.TimeUnit;
  * 幂等键服务（Redis）。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class IdempotencyService {
 
     private static final String KEY_PREFIX = "starshield:idem:";

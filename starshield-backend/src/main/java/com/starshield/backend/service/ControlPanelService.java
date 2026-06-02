@@ -2,6 +2,8 @@ package com.starshield.backend.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -12,6 +14,7 @@ import java.util.Set;
  * 控制台配置服务（敏感词与 Prompt 热管理）。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class ControlPanelService {
 
     private static final String SENSITIVE_WORD_KEY = "starshield:rules:sensitive_words";

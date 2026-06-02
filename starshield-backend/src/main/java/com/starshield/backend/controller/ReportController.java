@@ -3,6 +3,8 @@ package com.starshield.backend.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starshield.backend.common.Result;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.service.DailyReportService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +19,7 @@ import java.time.LocalDate;
  */
 @RestController
 @RequestMapping("/api/reports")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ReportController {
 
     private final DailyReportService dailyReportService;

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.mapper.ChatMessageLogMapper;
 import com.starshield.backend.service.ChatMessageService;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 /**
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
  * 继承 MyBatis-Plus ServiceImpl，获得批量插入等高效操作能力。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class ChatMessageServiceImpl extends ServiceImpl<ChatMessageLogMapper, ChatMessageLog>
         implements ChatMessageService {
 

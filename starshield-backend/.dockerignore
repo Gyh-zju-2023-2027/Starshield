@@ -1,0 +1,11 @@
+target/
+.git/
+.idea/
+*.imd
+.mvn/
+node_modules/
+stress-test/.venv/
+secure-test/.venv/
+.ai-logs/
+*.md
+!README.md

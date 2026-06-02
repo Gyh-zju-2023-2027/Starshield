@@ -2,6 +2,8 @@ package com.starshield.backend.config;
 
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
 import org.apache.ibatis.reflection.MetaObject;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
  * 修复消费链路因 createTime 为空导致 NACK 进 DLQ 的问题。
  */
 @Component
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class MyBatisMetaObjectHandler implements MetaObjectHandler {
 
     private static final String CREATE_TIME = "createTime";

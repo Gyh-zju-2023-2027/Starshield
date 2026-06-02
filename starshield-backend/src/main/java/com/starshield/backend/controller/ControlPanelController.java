@@ -1,6 +1,8 @@
 package com.starshield.backend.controller;
 
 import com.starshield.backend.common.Result;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.service.ControlPanelService;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +16,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/control")
 @CrossOrigin(origins = "*")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ControlPanelController {
 
     private final ControlPanelService controlPanelService;

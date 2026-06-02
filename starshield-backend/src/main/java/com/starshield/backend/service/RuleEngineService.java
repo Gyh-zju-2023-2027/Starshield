@@ -5,6 +5,8 @@ import com.google.common.hash.Funnels;
 import com.starshield.backend.model.FastCheckResult;
 import com.starshield.backend.model.ModerationDecision;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.Charset;
@@ -18,6 +20,7 @@ import java.util.concurrent.TimeUnit;
  * 引擎 A：Redis 敏感词快速拦截 + 布隆过滤器优化。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
 public class RuleEngineService {
 
     private static final String SENSITIVE_WORD_KEY = "starshield:rules:sensitive_words";

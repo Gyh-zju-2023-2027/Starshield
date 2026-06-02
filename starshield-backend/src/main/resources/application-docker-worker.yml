@@ -1,0 +1,22 @@
+# 消费微服务：MQ → 引擎 A/B → MySQL
+spring:
+  config:
+    activate:
+      on-profile: docker-worker
+
+  rabbitmq:
+    listener:
+      simple:
+        concurrency: 10
+        max-concurrency: 40
+        prefetch: 20
+
+starshield:
+  runtime:
+    mode: worker
+
+server:
+  tomcat:
+    threads:
+      max: 50
+      min-spare: 5

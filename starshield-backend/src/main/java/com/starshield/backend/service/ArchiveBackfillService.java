@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.starshield.backend.entity.ChatMessageLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -15,6 +17,7 @@ import java.util.Map;
  * 归档回填服务。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ArchiveBackfillService {
 
     private static final Logger log = LoggerFactory.getLogger(ArchiveBackfillService.class);

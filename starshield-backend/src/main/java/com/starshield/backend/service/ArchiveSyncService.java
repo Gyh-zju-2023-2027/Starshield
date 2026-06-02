@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
@@ -16,6 +18,7 @@ import java.util.Map;
  * 检索归档服务（双写至 ES）。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
 public class ArchiveSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(ArchiveSyncService.class);

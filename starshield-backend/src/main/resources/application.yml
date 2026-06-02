@@ -62,6 +62,8 @@ spring:
 
 # ===================== 星盾业务参数 =====================
 starshield:
+  runtime:
+    mode: monolith   # monolith | ingest | worker | api
   archive:
     es-enabled: true
   rate-limit:

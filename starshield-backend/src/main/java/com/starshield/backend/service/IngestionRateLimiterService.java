@@ -1,5 +1,7 @@
 package com.starshield.backend.service;
 
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -11,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 接入层限流器（固定窗口）。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.INGEST})
 public class IngestionRateLimiterService {
 
     private final Map<String, WindowCounter> counters = new ConcurrentHashMap<>();

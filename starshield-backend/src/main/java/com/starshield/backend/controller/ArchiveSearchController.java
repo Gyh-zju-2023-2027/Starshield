@@ -1,6 +1,8 @@
 package com.starshield.backend.controller;
 
 import com.starshield.backend.common.Result;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.dto.ArchiveSearchHit;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.service.ArchiveBackfillService;
@@ -17,6 +19,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/archive")
 @CrossOrigin(origins = "*")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ArchiveSearchController {
 
     private final ArchiveSearchService archiveSearchService;

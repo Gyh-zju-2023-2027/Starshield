@@ -1,0 +1,137 @@
+name: starshield
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-starshield}
+      MYSQL_DATABASE: starshield
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./starshield-backend/src/main/resources/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_PASSWORD:-starshield}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [starshield-net]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [starshield-net]
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [starshield-net]
+
+  ai-service:
+    build: ./ai-service
+    ports:
+      - "5050:5050"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5050/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [starshield-net]
+
+  starshield-ingest:
+    build: ./starshield-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,docker-ingest
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
+    networks: [starshield-net]
+
+  starshield-worker:
+    build: ./starshield-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,docker-worker
+      MYSQL_HOST: mysql
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-starshield}
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
+      STARSHIELD_AI_PROVIDER: lightweight
+      STARSHIELD_AI_LIGHTWEIGHT_URL: http://ai-service:5050/score
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks: [starshield-net]
+
+  starshield-api:
+    build: ./starshield-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker,docker-api
+      MYSQL_HOST: mysql
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-starshield}
+      REDIS_HOST: redis
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 60s
+    networks: [starshield-net]
+
+  gateway:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      starshield-ingest:
+        condition: service_healthy
+      starshield-api:
+        condition: service_healthy
+    networks: [starshield-net]
+
+networks:
+  starshield-net:
+    driver: bridge
+
+volumes:
+  mysql_data:

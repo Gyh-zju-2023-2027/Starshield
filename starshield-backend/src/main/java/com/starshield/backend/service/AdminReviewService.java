@@ -3,6 +3,8 @@ package com.starshield.backend.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.entity.ModerationAuditLog;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,7 @@ import java.util.HashMap;
  * 审核后台服务。
  */
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class AdminReviewService {
 
     private final ChatMessageService chatMessageService;

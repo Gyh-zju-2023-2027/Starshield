@@ -1,5 +1,7 @@
 package com.starshield.backend.config;
 
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -13,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 大屏 WebSocket 处理器。
  */
 @Component
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class DashboardWebSocketHandler extends TextWebSocketHandler {
 
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();

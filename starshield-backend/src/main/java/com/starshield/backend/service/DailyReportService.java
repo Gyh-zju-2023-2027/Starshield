@@ -8,6 +8,8 @@ import com.starshield.backend.mapper.ChatMessageLogMapper;
 import com.starshield.backend.mapper.DailyReportCacheMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class DailyReportService {
 
     private static final Logger log = LoggerFactory.getLogger(DailyReportService.class);

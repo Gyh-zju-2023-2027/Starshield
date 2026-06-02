@@ -1,0 +1,36 @@
+# 接入微服务：仅 POST /api/chat/upload + MQ 投递
+spring:
+  config:
+    activate:
+      on-profile: docker-ingest
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchRepositoriesAutoConfiguration
+      - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
+
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+
+starshield:
+  runtime:
+    mode: ingest
+
+server:
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 100
+
+management:
+  health:
+    db:
+      enabled: false
+    redis:
+      enabled: false
