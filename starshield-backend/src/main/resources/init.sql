@@ -70,3 +70,32 @@ CREATE TABLE IF NOT EXISTS `moderation_audit_log`
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci
   COMMENT = '人工复核操作审计日志';
+
+-- ----------------------------------------------------------------
+-- 爬取任务表
+-- B站爬取控制台任务记录
+-- 用于追踪 ingest_comments.py 的执行状态与进度
+-- ----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `crawl_task`
+(
+    `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
+    `type`            VARCHAR(20)  NOT NULL COMMENT '任务类型：video-视频 live-直播间',
+    `targets_json`    TEXT         NOT NULL COMMENT '目标列表（JSON数组字符串，如["BV1xx","https://live.bilibili.com/xxx"]）',
+    `target_count`    INT          NOT NULL DEFAULT 0 COMMENT '目标抓取总条数',
+    `fetched_count`   INT          NOT NULL DEFAULT 0 COMMENT '已抓取条数',
+    `pushed_count`    INT          NOT NULL DEFAULT 0 COMMENT '已推送到MQ条数',
+    `status`          VARCHAR(20)  NOT NULL DEFAULT 'pending' COMMENT '任务状态：pending-待处理 running-运行中 finished-已完成 failed-失败',
+    `error_msg`       TEXT                  DEFAULT NULL COMMENT '失败时的错误信息',
+    `create_time`     DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '任务创建时间（精确到毫秒）',
+    `finish_time`     DATETIME(3)           DEFAULT NULL COMMENT '任务完成时间',
+    PRIMARY KEY (`id`),
+    -- 按状态查询任务列表
+    INDEX `idx_status` (`status`),
+    -- 按创建时间倒序查询最近任务
+    INDEX `idx_create_time` (`create_time`),
+    -- 按任务类型筛选
+    INDEX `idx_type` (`type`)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci
+  COMMENT = 'B站爬取任务表 - 星盾功能①控制台';

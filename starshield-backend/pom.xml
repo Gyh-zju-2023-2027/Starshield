@@ -59,12 +59,6 @@
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
 
-        <!-- Redis（规则热更新/敏感词库） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-
         <!-- 参数校验 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

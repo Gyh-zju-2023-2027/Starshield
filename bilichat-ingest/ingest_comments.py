@@ -41,6 +41,8 @@ VIEW_URL = "https://api.bilibili.com/x/web-interface/view"
 # 2025 起老接口 /x/v2/reply 单页只放 3 条置顶热评，必须走「懒加载游标」新接口
 # /x/v2/reply/main：next=页号(从0开始)，mode=2(按时间)|3(按热度)，ps 上限 20
 REPLY_URL = "https://api.bilibili.com/x/v2/reply/main"
+# B 站直播间弹幕历史接口（公开，无需登录）
+LIVE_DANMAKU_URL = "https://api.live.bilibili.com/xlive/web-room/v1/dM/gethistory"
 DEFAULT_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -334,6 +336,7 @@ def crawl_to_local(
     sort: int,
     max_pages: int,
     sleep_between_pages: float,
+    task_id: Optional[str] = None,
 ) -> int:
     """逐 BV 抓评论 → 实时 append 到 JSONL。返回总条数。
 
@@ -344,6 +347,12 @@ def crawl_to_local(
 
     total = 0
     seen_text_hash: set[int] = set()  # 跨 BV 文本去重，防止"复制粘贴"刷屏
+    if task_id:
+        print(json.dumps({
+            "event": "fetch_start",
+            "task_id": task_id,
+            "fetched": 0
+        }, ensure_ascii=False), flush=True)
     with out_jsonl.open("w", encoding="utf-8") as fp:
         for bvid in bvids:
             if total >= target_count:
@@ -371,11 +380,187 @@ def crawl_to_local(
                 fp.write(json.dumps(record, ensure_ascii=False) + "\n")
                 fp.flush()
                 total += 1
+
+                if task_id and total % 50 == 0:
+                    print(json.dumps({
+                        "event": "progress",
+                        "task_id": task_id,
+                        "fetched": total
+                    }, ensure_ascii=False), flush=True)
                 if total >= target_count:
                     LOGGER.info("[BiliFetch] 已达目标条数 %s，停止抓取", target_count)
                     break
 
     LOGGER.info("[BiliFetch] 本地落盘完成 total=%s file=%s", total, out_jsonl)
+    if task_id:
+        print(json.dumps({
+            "event": "fetch_done",
+            "task_id": task_id,
+            "fetched": total
+        }, ensure_ascii=False), flush=True)
+        if total == 0 and bvids:
+            print(json.dumps({
+                "event": "error",
+                "task_id": task_id,
+                "message": "所有 BV 号均抓取失败，请检查 BV 号是否有效或视频是否已删除"
+            }, ensure_ascii=False), flush=True)
+    return total
+
+
+# =============================================================
+# 直播间弹幕抓取
+# =============================================================
+def _extract_room_id(raw: str) -> int:
+    """从直播间 URL 或纯数字字符串中提取 room_id。
+
+    支持格式：
+      - 纯数字： "12345"
+      - 标准 URL： "https://live.bilibili.com/12345"
+      - 带参数： "https://live.bilibili.com/12345?broadcast_type=0"
+
+    @author AI
+    """
+    raw = raw.strip()
+    # 纯数字
+    if raw.isdigit():
+        return int(raw)
+    # URL 解析
+    import re
+    m = re.search(r'live\.bilibili\.com/(\d+)', raw)
+    if m:
+        return int(m.group(1))
+    raise ValueError(f"无法解析直播间 ID: {raw}")
+
+
+def load_live_room_ids(cli_room_ids: List[str]) -> List[int]:
+    """解析命令行传入的直播间 ID 列表。
+
+    @author AI
+    """
+    if not cli_room_ids:
+        raise SystemExit("直播模式必须通过 --live-room-id 指定至少一个直播间")
+    room_ids: List[int] = []
+    seen = set()
+    for raw in cli_room_ids:
+        rid = _extract_room_id(raw)
+        if rid not in seen:
+            seen.add(rid)
+            room_ids.append(rid)
+    return room_ids
+
+
+def fetch_live_danmaku(
+    sess: requests.Session,
+    room_id: int,
+    target_count: int,
+    timeout: float = 10.0,
+) -> List[Dict]:
+    """拉取 B 站直播间最近弹幕历史。
+
+    调用公开接口 ``/xlive/web-room/v1/dM/gethistory``，一次返回最近若干条弹幕。
+    返回格式与视频评论 record 一致，便于复用推送逻辑。
+
+    @author AI
+    """
+    records: List[Dict] = []
+    try:
+        resp = sess.get(LIVE_DANMAKU_URL, params={"roomid": room_id}, timeout=timeout)
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("code") != 0:
+            raise RuntimeError(f"live danmaku code={body.get('code')} message={body.get('message')}")
+        data = body.get("data") or {}
+        # room 数组包含弹幕；admin 包含管理消息（忽略）
+        room_msgs = data.get("room") or []
+        for msg in room_msgs:
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            uid = msg.get("uid", 0)
+            nickname = msg.get("nickname", "")
+            # timeline 格式如 "2024-01-15 20:30:45"
+            timeline = msg.get("timeline") or ""
+            ctime = None
+            if timeline:
+                try:
+                    dt = datetime.strptime(timeline, "%Y-%m-%d %H:%M:%S")
+                    ctime = int(dt.timestamp())
+                except (ValueError, OSError):
+                    pass
+            records.append({
+                "room_id": room_id,
+                "uid": uid,
+                "nickname": nickname,
+                "text": text,
+                "ctime": ctime,
+                "rpid": f"live_{room_id}_{len(records)}",  # 伪造唯一 ID
+            })
+            if len(records) >= target_count:
+                break
+    except Exception as exc:
+        LOGGER.warning("[LiveFetch] room_id=%s 拉取失败: %s", room_id, exc)
+    return records
+
+
+def crawl_live_to_local(
+    room_ids: List[int],
+    *,
+    out_jsonl: Path,
+    cookie: Optional[str],
+    target_count: int,
+    task_id: Optional[str] = None,
+) -> int:
+    """拉直播间弹幕 → 写入 JSONL。返回总条数。
+
+    @author AI
+    """
+    out_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    sess = build_session(cookie)
+    total = 0
+    seen_text: set[str] = set()
+
+    if task_id:
+        print(json.dumps({
+            "event": "fetch_start",
+            "task_id": task_id,
+            "fetched": 0
+        }, ensure_ascii=False), flush=True)
+
+    with out_jsonl.open("w", encoding="utf-8") as fp:
+        for room_id in room_ids:
+            if total >= target_count:
+                break
+            LOGGER.info("[LiveFetch] 开始抓取 room_id=%s", room_id)
+            records = fetch_live_danmaku(sess, room_id, target_count - total)
+            for rec in records:
+                if rec["text"] in seen_text:
+                    continue
+                seen_text.add(rec["text"])
+                fp.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                fp.flush()
+                total += 1
+                if task_id and total % 50 == 0:
+                    print(json.dumps({
+                        "event": "progress",
+                        "task_id": task_id,
+                        "fetched": total
+                    }, ensure_ascii=False), flush=True)
+                if total >= target_count:
+                    break
+
+    LOGGER.info("[LiveFetch] 本地落盘完成 total=%s file=%s", total, out_jsonl)
+    if task_id:
+        print(json.dumps({
+            "event": "fetch_done",
+            "task_id": task_id,
+            "fetched": total
+        }, ensure_ascii=False), flush=True)
+        if total == 0 and room_ids:
+            print(json.dumps({
+                "event": "error",
+                "task_id": task_id,
+                "message": "所有直播间均拉取失败，请检查房间号是否有效或直播是否已结束"
+            }, ensure_ascii=False), flush=True)
     return total
 
 
@@ -389,6 +574,7 @@ def push_to_backend(
     max_retries: int,
     platform: str,
     limit: Optional[int] = None,
+    task_id: Optional[str] = None,
 ) -> PostStats:
     """读取 JSONL，限速并发推到 /api/chat/upload。
 
@@ -397,6 +583,8 @@ def push_to_backend(
     stats = PostStats()
     bucket = TokenBucket(rate_per_sec=rps, capacity=max(rps, 1.0))
     sess = requests.Session()
+    # 禁用系统代理，避免本地请求被路由到 Clash/代理软件返回 502
+    sess.trust_env = False
 
     def one(record: Dict) -> Tuple[bool, str]:
         text = (record.get("text") or "").strip()
@@ -438,6 +626,12 @@ def push_to_backend(
                 break
 
     LOGGER.info("[Push] 待推送 %s 条 → %s", len(records), base_url)
+    if task_id:
+        print(json.dumps({
+            "event": "push_start",
+            "task_id": task_id,
+            "pushed": 0
+        }, ensure_ascii=False), flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(one, rec): rec for rec in records}
@@ -462,12 +656,25 @@ def push_to_backend(
                     stats.failed,
                 )
 
+            if task_id and idx % 100 == 0:
+                print(json.dumps({
+                    "event": "progress",
+                    "task_id": task_id,
+                    "pushed": idx
+                }, ensure_ascii=False), flush=True)
+
     LOGGER.info(
         "[Push] 完成 ok=%s 429=%s fail=%s",
         stats.success,
         stats.rate_limited,
         stats.failed,
     )
+    if task_id:
+        print(json.dumps({
+            "event": "finished",
+            "task_id": task_id,
+            "pushed": stats.success
+        }, ensure_ascii=False), flush=True)
     return stats
 
 
@@ -490,6 +697,18 @@ def parse_args() -> argparse.Namespace:
         description="B 站评论爬虫 + StarShield 推送（先落本地 JSONL，再推后端走 Bloom+模型链路）"
     )
     p.add_argument(
+        "--from-task",
+        type=str,
+        default=None,
+        help="StarShield 任务 ID（任务模式下使用）"
+    )
+    p.add_argument(
+        "--type",
+        choices=["video", "live"],
+        default="video",
+        help="任务类型：video-视频评论 live-直播间弹幕（默认 video）"
+    )
+    p.add_argument(
         "--bvid",
         action="append",
         default=[],
@@ -499,6 +718,12 @@ def parse_args() -> argparse.Namespace:
         "--bvid-file",
         default=None,
         help="文本文件，一行一个 BV 号（# 开头注释会被跳过）",
+    )
+    p.add_argument(
+        "--live-room-id",
+        action="append",
+        default=[],
+        help="直播间房间号或 URL（可多次指定，如 --live-room-id 12345 --live-room-id https://live.bilibili.com/67890）",
     )
     p.add_argument("--target-count", type=int, default=10000, help="累计抓取多少条评论后停止（默认 10000）")
     p.add_argument("--ps", type=int, default=20, help="B 站每页条数（2024 起 /x/v2/reply 上限收紧到 20）")
@@ -548,6 +773,8 @@ def main() -> None:
     args = parse_args()
     setup_logging(args.verbose, args.log_file)
 
+    task_id = args.from_task
+
     if args.dry_run:
         LOGGER.info("[Main] dry-run 模式，仅打印参数")
         LOGGER.info("[Main] args=%s", vars(args))
@@ -556,18 +783,30 @@ def main() -> None:
     out_path = Path(args.out_jsonl)
 
     if not args.skip_fetch:
-        bvids = load_bvids(args.bvid, args.bvid_file)
-        LOGGER.info("[Main] BV 列表共 %s 个，目标 %s 条", len(bvids), args.target_count)
-        crawl_to_local(
-            bvids,
-            out_jsonl=out_path,
-            cookie=args.cookie,
-            target_count=args.target_count,
-            ps=args.ps,
-            sort=args.sort,
-            max_pages=args.max_pages,
-            sleep_between_pages=args.sleep_between_pages,
-        )
+        if args.type == "live":
+            room_ids = load_live_room_ids(args.live_room_id)
+            LOGGER.info("[Main] 直播间列表共 %s 个，目标 %s 条", len(room_ids), args.target_count)
+            crawl_live_to_local(
+                room_ids,
+                out_jsonl=out_path,
+                cookie=args.cookie,
+                target_count=args.target_count,
+                task_id=task_id,
+            )
+        else:
+            bvids = load_bvids(args.bvid, args.bvid_file)
+            LOGGER.info("[Main] BV 列表共 %s 个，目标 %s 条", len(bvids), args.target_count)
+            crawl_to_local(
+                bvids,
+                out_jsonl=out_path,
+                cookie=args.cookie,
+                target_count=args.target_count,
+                ps=args.ps,
+                sort=args.sort,
+                max_pages=args.max_pages,
+                sleep_between_pages=args.sleep_between_pages,
+                task_id=task_id,
+            )
     else:
         if not out_path.exists():
             raise SystemExit(f"--skip-fetch 模式下 {out_path} 不存在，请先抓取或换路径")
@@ -577,6 +816,7 @@ def main() -> None:
         LOGGER.info("[Main] --skip-push 已设置，结束")
         return
 
+    platform = "BILIBILI_LIVE" if args.type == "live" else args.platform
     push_to_backend(
         out_path,
         base_url=args.base_url,
@@ -584,8 +824,9 @@ def main() -> None:
         workers=args.workers,
         request_timeout=args.request_timeout,
         max_retries=args.max_retries,
-        platform=args.platform,
+        platform=platform,
         limit=args.push_limit,
+        task_id=task_id,
     )
 
 
