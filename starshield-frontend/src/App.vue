@@ -79,7 +79,8 @@
         <DashboardBoard v-else-if="tab === 'dashboard'" />
         <BanAnalytics v-else-if="tab === 'ban'" />
         <DailyReport v-else-if="tab === 'report'" />
-        <ControlPanel v-else />
+        <ControlPanel v-else-if="tab === 'control'" />
+        <CrawlConsole v-else-if="tab === 'crawl'" @navigate="tab = $event" />
       </div>
     </main>
   </div>
@@ -93,11 +94,13 @@ import DashboardBoard from './views/DashboardBoard.vue'
 import BanAnalytics from './views/BanAnalytics.vue'
 import ControlPanel from './views/ControlPanel.vue'
 import DailyReport from './views/DailyReport.vue'
+import CrawlConsole from './views/CrawlConsole.vue'
 
 const tab = ref('test')
 
 const nav = [
   { id: 'test', label: '压测入口', icon: 'rocket_launch', desc: '模拟入口流量与日志' },
+  { id: 'crawl', label: '爬取控制台', icon: 'download', desc: 'B站数据采集与任务管理' },
   { id: 'admin', label: '审核后台', icon: 'fact_check', desc: '处理待复核记录' },
   { id: 'dashboard', label: '实时大屏', icon: 'monitoring', desc: '监控实时风险态势' },
   { id: 'ban', label: '封禁分析', icon: 'block', desc: '分析封禁样本结构' },
