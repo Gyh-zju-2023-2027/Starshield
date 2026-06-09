@@ -103,11 +103,11 @@
 
 <script setup>
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import * as echarts from 'echarts'
 import { fetchDashboardMetrics } from '../api/dashboard'
 import MetricCard from '../components/ui/MetricCard.vue'
 import PageIntro from '../components/ui/PageIntro.vue'
 import SurfacePanel from '../components/ui/SurfacePanel.vue'
+import { graphic, init } from '../utils/echartsCore'
 
 const REALTIME_INTERVAL_MS = 1000
 const TREND_INTERVAL_MS = 5000
@@ -158,7 +158,7 @@ function decisionTagClass(decision) {
 
 function initChart() {
   if (!trendChartRef.value) return
-  chart = echarts.init(trendChartRef.value)
+  chart = init(trendChartRef.value)
   chart.setOption({
     backgroundColor: 'transparent',
     tooltip: {
@@ -205,7 +205,7 @@ function initChart() {
         yAxisIndex: 0,
         lineStyle: { color: '#fb7185', width: 3 },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(255,107,87,0.22)' },
             { offset: 1, color: 'transparent' }
           ])
@@ -218,7 +218,7 @@ function initChart() {
         yAxisIndex: 1,
         itemStyle: {
           borderRadius: [6, 6, 0, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: '#5EE6FF' },
             { offset: 1, color: '#3B82F6' }
           ])
@@ -230,7 +230,7 @@ function initChart() {
 
 function initPlatformChart() {
   if (!platformChartRef.value) return
-  platformChart = echarts.init(platformChartRef.value)
+  platformChart = init(platformChartRef.value)
   renderPlatformChart()
 }
 
@@ -270,7 +270,7 @@ function renderPlatformChart() {
         barMaxWidth: 42,
         itemStyle: {
           borderRadius: [8, 8, 0, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: '#5EE6FF' },
             { offset: 1, color: '#3B82F6' }
           ])
@@ -545,4 +545,3 @@ onUnmounted(() => {
   window.removeEventListener('resize', resizeChart)
 })
 </script>
-

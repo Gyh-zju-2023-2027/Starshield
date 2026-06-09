@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: starshield-ingest
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - starshield-ingest:8080
+
+  - job_name: starshield-api
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - starshield-api:8080
+
+  - job_name: starshield-worker
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - starshield-worker:8080

@@ -27,7 +27,7 @@
               ? 'ss-nav-button--active text-sky-50 shadow-[inset_0_1px_0_rgba(103,232,249,0.12)] ring-1 ring-sky-400/20'
               : 'text-slate-400 hover:bg-white/5 hover:text-slate-100'
           "
-          @click="tab = item.id"
+          @click="selectTab(item.id)"
         >
           <span class="material-symbols-outlined shrink-0 text-[22px]" :class="tab === item.id ? 'text-sky-200' : 'text-slate-500'">{{
             item.icon
@@ -68,47 +68,79 @@
               type="button"
               class="whitespace-nowrap rounded-full border px-3 py-1.5 text-xs transition"
               :class="tab === item.id ? 'border-sky-400/20 bg-sky-400/[0.10] text-sky-50' : 'border-white/10 bg-white/[0.03] text-slate-400'"
-              @click="tab = item.id"
+              @click="selectTab(item.id)"
             >
               {{ item.label }}
             </button>
           </div>
         </header>
-        <TestMock v-if="tab === 'test'" />
-        <AdminReview v-else-if="tab === 'admin'" />
-        <DashboardBoard v-else-if="tab === 'dashboard'" />
-        <BanAnalytics v-else-if="tab === 'ban'" />
-        <DailyReport v-else-if="tab === 'report'" />
-        <ControlPanel v-else-if="tab === 'control'" />
-        <CrawlConsole v-else-if="tab === 'crawl'" @navigate="tab = $event" />
+        <Suspense>
+          <component :is="activeComponent" @navigate="selectTab" />
+          <template #fallback>
+            <section class="flex min-h-screen items-center justify-center px-6">
+              <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-slate-300">
+                视图加载中...
+              </div>
+            </section>
+          </template>
+        </Suspense>
       </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import TestMock from './views/TestMock.vue'
-import AdminReview from './views/AdminReview.vue'
-import DashboardBoard from './views/DashboardBoard.vue'
-import BanAnalytics from './views/BanAnalytics.vue'
-import ControlPanel from './views/ControlPanel.vue'
-import DailyReport from './views/DailyReport.vue'
-import CrawlConsole from './views/CrawlConsole.vue'
-
-const tab = ref('test')
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const nav = [
-  { id: 'test', label: '压测入口', icon: 'rocket_launch', desc: '模拟入口流量与日志' },
-  { id: 'crawl', label: '爬取控制台', icon: 'download', desc: 'B站数据采集与任务管理' },
-  { id: 'admin', label: '审核后台', icon: 'fact_check', desc: '处理待复核记录' },
-  { id: 'dashboard', label: '实时大屏', icon: 'monitoring', desc: '监控实时风险态势' },
-  { id: 'ban', label: '封禁分析', icon: 'block', desc: '分析封禁样本结构' },
-  { id: 'control', label: '规则控制台', icon: 'tune', desc: '更新词库与 Prompt' },
-  { id: 'report', label: '每日战报', icon: 'summarize', desc: '查看日报与导出' }
+  { id: 'test', path: '/test', label: '压测入口', icon: 'rocket_launch', desc: '模拟入口流量与日志' },
+  { id: 'crawl', path: '/crawl', label: '爬取控制台', icon: 'download', desc: 'B站数据采集与任务管理' },
+  { id: 'admin', path: '/admin', label: '审核后台', icon: 'fact_check', desc: '处理待复核记录' },
+  { id: 'dashboard', path: '/dashboard', label: '实时大屏', icon: 'monitoring', desc: '监控实时风险态势' },
+  { id: 'ban', path: '/ban', label: '封禁分析', icon: 'block', desc: '分析封禁样本结构' },
+  { id: 'control', path: '/control', label: '规则控制台', icon: 'tune', desc: '更新词库与 Prompt' },
+  { id: 'report', path: '/report', label: '每日战报', icon: 'summarize', desc: '查看日报与导出' }
 ]
 
+const routeComponents = {
+  test: defineAsyncComponent(() => import('./views/TestMock.vue')),
+  crawl: defineAsyncComponent(() => import('./views/CrawlConsole.vue')),
+  admin: defineAsyncComponent(() => import('./views/AdminReview.vue')),
+  dashboard: defineAsyncComponent(() => import('./views/DashboardBoard.vue')),
+  ban: defineAsyncComponent(() => import('./views/BanAnalytics.vue')),
+  control: defineAsyncComponent(() => import('./views/ControlPanel.vue')),
+  report: defineAsyncComponent(() => import('./views/DailyReport.vue'))
+}
+
+const tab = ref(resolveTabFromPath(window.location.pathname))
+
 const activeItem = computed(() => nav.find((item) => item.id === tab.value) || nav[0])
+const activeComponent = computed(() => routeComponents[tab.value] || routeComponents.test)
+
+function resolveTabFromPath(pathname) {
+  const matched = nav.find((item) => item.path === pathname)
+  return matched?.id || 'test'
+}
+
+function selectTab(nextTab) {
+  const matched = nav.find((item) => item.id === nextTab) || nav[0]
+  tab.value = matched.id
+  if (window.location.pathname !== matched.path) {
+    window.history.pushState({ tab: matched.id }, '', matched.path)
+  }
+}
+
+function handlePopState() {
+  tab.value = resolveTabFromPath(window.location.pathname)
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', handlePopState)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', handlePopState)
+})
 </script>
 
 <style>

@@ -7,7 +7,7 @@
 **入口**：`POST /api/chat/upload`（`ChatMessageController`）
 
 1. 从请求体反序列化为 `ChatMessageLog`。
-2. **限流**（`IngestionRateLimiterService`）：全局限流、按客户端 IP、按 `playerId`。默认使用 Redis Lua 固定窗口计数，多个 `ingest` 实例共享同一组 key；Redis 不可用且 `starshield.rate-limit.fallback-to-local=true` 时降级为本机窗口。触发限流返回 `Result.code=429`，并由全局响应处理同步为 HTTP 429。
+2. **限流**（`IngestionRateLimiterService`）：全局限流、按客户端 IP、按 `playerId`。默认使用 Redis Lua + ZSet 滑动窗口，多个 `ingest` 实例共享同一组 key；也可通过 `starshield.rate-limit.algorithm=token-bucket` 切换为 Redis 令牌桶。Redis 不可用且 `starshield.rate-limit.fallback-to-local=true` 时降级为本机令牌桶。触发限流返回 `Result.code=429`，并由全局响应处理同步为 HTTP 429。
 3. 将 `status` 置为 `0`（待处理）。
 4. 将整个对象 **JSON 序列化后** 发送到 RabbitMQ（`chat.direct.exchange` + `chat.message.routing.key`）。
 5. 接口立即返回成功；**此时尚未写 MySQL**，审核在消费者中完成。
@@ -97,7 +97,7 @@
 
 | 配置前缀 | 含义 |
 |---|---|
-| `starshield.rate-limit.*` | 接入 QPS 上限、Redis 限流开关、窗口长度与 key 前缀 |
+| `starshield.rate-limit.*` | 接入 QPS 上限、Redis 限流开关、滑动窗口/令牌桶算法、窗口长度与 key 前缀 |
 | `starshield.dashboard.*` | 大屏 WebSocket 广播周期 |
 | `starshield.archive.es-enabled` | 是否写/查 ES |
 | `starshield.ai.*` | 提供方标识、Prompt 版本、轻量 URL、DeepSeek URL、阈值、`.env` 回读开关等 |

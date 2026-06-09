@@ -147,6 +147,10 @@ docker compose up -d --build
 # 对外入口仍为 http://localhost:8080
 curl -s http://localhost:8080/api/dashboard/metrics
 
+# Prometheus / Grafana
+# 浏览器访问 http://localhost:9090
+# 浏览器访问 http://localhost:3000   # admin / starshield
+
 # 扩容 worker / ingest（接入限流走 Redis，扩容后仍共享计数）
 docker compose up -d --scale starshield-worker=2 --scale starshield-ingest=2
 
@@ -166,6 +170,8 @@ docker compose up -d --build starshield-api gateway
 | `redis` | `6379` | 分布式限流、敏感词/Prompt、幂等键 |
 | `rabbitmq` | `5672` / `15672` | 消息队列与管理控制台 |
 | `ai-service` | `5050` | 轻量模型 `/score` |
+| `prometheus` | `9090` | 抓取 ingest / api / worker 的 `/actuator/prometheus` |
+| `grafana` | `3000` | 预置 StarShield Observability 看板，默认 `admin/starshield` |
 
 **常用 Docker 命令**
 
@@ -269,10 +275,10 @@ node ws_dashboard_benchmark.js --host ws://127.0.0.1:8080 --connections 1000 --r
 - [x] 规则引擎 BloomFilter 漏审修复
 - [x] `Result` 错误码同步 HTTP 状态码
 - [x] Redis 分布式限流（替换单机内存固定窗口）
-- [ ] Redis 限流升级为滑动窗口 / 令牌桶，降低固定窗口边界抖动
-- [ ] Prometheus + Grafana 监控 QPS / MQ 深度 / 消费延迟
+- [x] Redis 限流升级为滑动窗口 / 令牌桶，降低固定窗口边界抖动
+- [x] Prometheus + Grafana 监控 QPS / MQ 深度 / 消费延迟
 - [ ] Kubernetes Helm Chart
-- [ ] 前端按路由拆包，降低生产构建 chunk 体积
+- [x] 前端按路由拆包，降低生产构建 chunk 体积
 
 ---
 

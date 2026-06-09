@@ -9,6 +9,7 @@ import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.dto.ChatMessageUploadRequest;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.service.IngestionRateLimiterService;
+import com.starshield.backend.service.StarshieldMetrics;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -29,13 +30,16 @@ public class ChatMessageController {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final IngestionRateLimiterService rateLimiterService;
+    private final StarshieldMetrics metrics;
 
     public ChatMessageController(RabbitTemplate rabbitTemplate,
                                  ObjectMapper objectMapper,
-                                 IngestionRateLimiterService rateLimiterService) {
+                                 IngestionRateLimiterService rateLimiterService,
+                                 StarshieldMetrics metrics) {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.rateLimiterService = rateLimiterService;
+        this.metrics = metrics;
     }
 
     /**
@@ -45,16 +49,20 @@ public class ChatMessageController {
      */
     @PostMapping("/upload")
     public Result<Void> upload(@Valid @RequestBody ChatMessageUploadRequest request, HttpServletRequest httpRequest) {
+        metrics.recordIngestRequest("attempt");
         String playerId = request.getPlayerId();
         String clientIp = extractClientIp(httpRequest);
 
         if (!rateLimiterService.allowGlobal()) {
+            metrics.recordRateLimited("global");
             return Result.error(429, "全局限流触发，请稍后重试");
         }
         if (!rateLimiterService.allowIp(clientIp)) {
+            metrics.recordRateLimited("ip");
             return Result.error(429, "IP 请求过于频繁，请稍后重试");
         }
         if (!rateLimiterService.allowPlayer(playerId)) {
+            metrics.recordRateLimited("player");
             return Result.error(429, "玩家请求过于频繁，请稍后重试");
         }
 
@@ -72,13 +80,22 @@ public class ChatMessageController {
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.CHAT_EXCHANGE,
                     RabbitMQConfig.CHAT_ROUTING_KEY,
-                    messageJson
+                    messageJson,
+                    mqMessage -> {
+                        mqMessage.getMessageProperties().setHeader(StarshieldMetrics.ENQUEUED_AT_HEADER, System.currentTimeMillis());
+                        return mqMessage;
+                    }
             );
+            metrics.recordMqPublished();
+            metrics.recordIngestRequest("accepted");
             log.debug("[消息入队] playerId={}, ip={}", playerId, clientIp);
         } catch (JsonProcessingException e) {
+            metrics.recordIngestRequest("json_error");
             log.error("[消息入队] JSON 序列化失败", e);
             return Result.error("消息格式异常，请检查请求参数");
         } catch (Exception e) {
+            metrics.recordMqPublishError();
+            metrics.recordIngestRequest("mq_error");
             log.error("[消息入队] 投递 MQ 失败", e);
             return Result.error("消息接收失败，请稍后重试");
         }

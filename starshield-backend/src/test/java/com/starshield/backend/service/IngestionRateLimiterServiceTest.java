@@ -28,15 +28,16 @@ class IngestionRateLimiterServiceTest {
         ReflectionTestUtils.setField(rateLimiterService, "ipQps", 2);
         ReflectionTestUtils.setField(rateLimiterService, "playerQps", 2);
         ReflectionTestUtils.setField(rateLimiterService, "windowMs", 1000L);
+        ReflectionTestUtils.setField(rateLimiterService, "algorithm", "sliding-window");
         ReflectionTestUtils.setField(rateLimiterService, "redisEnabled", true);
         ReflectionTestUtils.setField(rateLimiterService, "fallbackToLocal", true);
         ReflectionTestUtils.setField(rateLimiterService, "keyPrefix", "test:rate-limit");
     }
 
     @Test
-    void shouldLimitByRedisCounter() {
-        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any()))
-                .thenReturn(1L, 2L, 3L);
+    void shouldLimitByRedisSlidingWindow() {
+        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any(), any(), any(), any(), any()))
+                .thenReturn(1L, 1L, 0L);
 
         assertTrue(rateLimiterService.allowPlayer("player-1"));
         assertTrue(rateLimiterService.allowPlayer("player-1"));
@@ -44,8 +45,18 @@ class IngestionRateLimiterServiceTest {
     }
 
     @Test
-    void shouldFallbackToLocalWindowWhenRedisFails() {
-        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any()))
+    void shouldSupportRedisTokenBucket() {
+        ReflectionTestUtils.setField(rateLimiterService, "algorithm", "token-bucket");
+        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any(), any(), any(), any(), any()))
+                .thenReturn(1L, 0L);
+
+        assertTrue(rateLimiterService.allowIp("127.0.0.1"));
+        assertFalse(rateLimiterService.allowIp("127.0.0.1"));
+    }
+
+    @Test
+    void shouldFallbackToLocalTokenBucketWhenRedisFails() {
+        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("redis down"));
         ReflectionTestUtils.setField(rateLimiterService, "playerQps", 1);
 
@@ -55,7 +66,7 @@ class IngestionRateLimiterServiceTest {
 
     @Test
     void shouldDenyWhenRedisFailsAndFallbackDisabled() {
-        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any()))
+        when(redisTemplate.execute(anyRedisScript(), anyStringList(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("redis down"));
         ReflectionTestUtils.setField(rateLimiterService, "fallbackToLocal", false);
 

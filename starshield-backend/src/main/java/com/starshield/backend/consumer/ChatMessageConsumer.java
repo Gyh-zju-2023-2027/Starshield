@@ -13,6 +13,8 @@ import com.starshield.backend.service.AiAnalysisService;
 import com.starshield.backend.service.ArchiveSyncService;
 import com.starshield.backend.service.ChatMessageService;
 import com.starshield.backend.service.RuleEngineService;
+import com.starshield.backend.service.StarshieldMetrics;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -33,17 +35,20 @@ public class ChatMessageConsumer {
     private final ChatMessageService chatMessageService;
     private final RuleEngineService ruleEngineService;
     private final ArchiveSyncService archiveSyncService;
+    private final StarshieldMetrics metrics;
 
     public ChatMessageConsumer(ObjectMapper objectMapper,
                                AiAnalysisService aiAnalysisService,
                                ChatMessageService chatMessageService,
                                RuleEngineService ruleEngineService,
-                               ArchiveSyncService archiveSyncService) {
+                               ArchiveSyncService archiveSyncService,
+                               StarshieldMetrics metrics) {
         this.objectMapper = objectMapper;
         this.aiAnalysisService = aiAnalysisService;
         this.chatMessageService = chatMessageService;
         this.ruleEngineService = ruleEngineService;
         this.archiveSyncService = archiveSyncService;
+        this.metrics = metrics;
     }
 
     /**
@@ -54,7 +59,10 @@ public class ChatMessageConsumer {
     @RabbitListener(queues = RabbitMQConfig.CHAT_MESSAGE_QUEUE)
     public void consume(String messageBody, Message message, Channel channel) {
         long deliveryTag = message.getMessageProperties().getDeliveryTag();
+        Timer.Sample processingTimer = metrics.startConsumerTimer();
+        String outcome = "success";
         try {
+            metrics.recordConsumerLag(message.getMessageProperties().getHeader(StarshieldMetrics.ENQUEUED_AT_HEADER));
             ChatMessageLog chatLog = objectMapper.readValue(messageBody, ChatMessageLog.class);
 
             FastCheckResult fastResult = ruleEngineService.fastCheck(chatLog.getContent());
@@ -88,13 +96,18 @@ public class ChatMessageConsumer {
             archiveSyncService.syncToEs(chatLog);
 
             channel.basicAck(deliveryTag, false);
+            metrics.recordConsumerMessage("success");
         } catch (Exception e) {
+            outcome = "error";
+            metrics.recordConsumerMessage("error");
             log.error("[消息消费] 处理失败 deliveryTag={}", deliveryTag, e);
             try {
                 channel.basicNack(deliveryTag, false, false);
             } catch (Exception nackEx) {
                 log.error("[消息消费] NACK 失败 deliveryTag={}", deliveryTag, nackEx);
             }
+        } finally {
+            metrics.recordConsumerProcessing(processingTimer, outcome);
         }
     }
 

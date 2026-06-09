@@ -1,19 +1,58 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
+import {
+  ElButton,
+  ElDatePicker,
+  ElDialog,
+  ElDrawer,
+  ElForm,
+  ElFormItem,
+  ElInput,
+  ElInputNumber,
+  ElLoading,
+  ElOption,
+  ElProgress,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSelect,
+  ElSlider,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+  ElTimeline,
+  ElTimelineItem
+} from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import './styles/tailwind.css'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 
 const app = createApp(App)
 
-// 注册 Element Plus
-app.use(ElementPlus)
+const elementComponents = [
+  ElButton,
+  ElDatePicker,
+  ElDialog,
+  ElDrawer,
+  ElForm,
+  ElFormItem,
+  ElInput,
+  ElInputNumber,
+  ElOption,
+  ElProgress,
+  ElRadioButton,
+  ElRadioGroup,
+  ElSelect,
+  ElSlider,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+  ElTimeline,
+  ElTimelineItem
+]
 
-// 全局注册所有 Element Plus 图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
+for (const component of elementComponents) {
+  app.use(component)
 }
+app.use(ElLoading)
 
 app.mount('#app')

@@ -74,6 +74,7 @@ starshield:
   dashboard:
     push-interval-ms: 5000
   rate-limit:
+    algorithm: sliding-window   # sliding-window | token-bucket
     global-qps: 20000
     ip-qps: 300
     player-qps: 30
@@ -86,6 +87,20 @@ starshield:
     prompt-version: v2
     block-threshold: 0.8
     pass-threshold: 0.3
+
+# ===================== Actuator / Prometheus 监控 =====================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 # ===================== MyBatis-Plus 配置 =====================
 mybatis-plus:

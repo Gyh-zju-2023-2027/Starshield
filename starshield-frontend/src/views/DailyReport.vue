@@ -206,11 +206,10 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { getDailyReport } from '../api/report.js'
-import * as echarts from 'echarts'
-import html2pdf from 'html2pdf.js'
 import MetricCard from '../components/ui/MetricCard.vue'
 import PageIntro from '../components/ui/PageIntro.vue'
 import SurfacePanel from '../components/ui/SurfacePanel.vue'
+import { graphic, init } from '../utils/echartsCore'
 
 const selectedDate = ref(new Date())
 const loading = ref(false)
@@ -352,7 +351,7 @@ function startTypingEffect(text) {
 function renderChart(data) {
   if (!hourlyChartRef.value) return
   if (myChart) myChart.dispose()
-  myChart = echarts.init(hourlyChartRef.value)
+  myChart = init(hourlyChartRef.value)
 
   myChart.setOption({
     backgroundColor: 'transparent',
@@ -382,7 +381,7 @@ function renderChart(data) {
         data: data || [],
         itemStyle: {
           borderRadius: [8, 8, 0, 0],
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: '#5EE6FF' },
             { offset: 1, color: '#3B82F6' }
           ])
@@ -392,7 +391,7 @@ function renderChart(data) {
   })
 }
 
-function exportPdf() {
+async function exportPdf() {
   const element = document.getElementById('pdf-report-content')
   if (!element) return
 
@@ -411,9 +410,14 @@ function exportPdf() {
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
   }
 
-  html2pdf().set(opt).from(element).save().finally(() => {
+  try {
+    const { default: html2pdf } = await import('html2pdf.js')
+    await html2pdf().set(opt).from(element).save()
+  } catch (error) {
+    console.error('导出 PDF 失败', error)
+  } finally {
     exporting.value = false
-  })
+  }
 }
 
 function resizeChart() {

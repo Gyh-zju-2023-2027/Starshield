@@ -1,6 +1,6 @@
 # StarShield 压测与安全测试报告
 
-> 测试日期：2026-06-02（压测/安全基线）；**2026-06-07（多平台接入 + Docker 联调补充）**  
+> 测试日期：2026-06-02（压测/安全基线）；**2026-06-07（多平台接入 + Docker 联调补充）**；**2026-06-09（限流/监控/前端拆包补充）**  
 > 范围：高并发摄取 / WebSocket 长连接 / 安全攻防用例 / **IdentityV-weibo & B 站直播实时弹幕**  
 > 脚本目录：`stress-test/`、`secure-test/`、`bilichat-ingest/`  
 > 测试者：人 + AI 协作
@@ -33,11 +33,17 @@
 - ✅ **规则引擎 BloomFilter 漏审修复**：按敏感词长度扫描候选子串后再精确匹配，测试不再接受假阴性。
 - ✅ **鉴权加固已落地**：`/api/admin/**`、`/api/crawl/**`、控制面写操作、`POST /api/archive/reindex` 需管理令牌。
 - ✅ **接入层校验与 HTTP 语义**：上传请求使用 `@Valid`，`Result.code` 会同步映射为 HTTP 400 / 409 / 429 等状态码。
-- ✅ **接入限流分布式化**：`IngestionRateLimiterService` 已从 JVM 内存窗口改为 Redis Lua 固定窗口，多个 ingest 实例共享全局 / IP / player 计数，Redis 故障时默认本地降级。
+- ✅ **接入限流分布式化**：`IngestionRateLimiterService` 已从 JVM 内存窗口改为 Redis Lua 滑动窗口，多个 ingest 实例共享全局 / IP / player 计数；也可切换 `token-bucket`，Redis 故障时默认本地令牌桶降级。
 - ✅ **默认测试可本地运行**：`mvn test` 默认不连接 Redis / RabbitMQ / MySQL / DeepSeek；真实集成测试需 `STARSHIELD_RUN_INTEGRATION_TESTS=true` 显式开启。
 - ⚠️ **仍需重跑 secure-test**：下方 2026-06-02 安全 FAIL/WARN 表保留为历史基线，需在最新代码与目标部署形态下重新生成正式结论。
 
-📌 2026-06-02 为**本地单体**压测/安全基线；2026-06-07 为 **Docker 微服务 + 新 ingest 模块** 联调记录；2026-06-08 为代码修复回归说明。
+**工程化补充（2026-06-09）**
+
+- ✅ **Prometheus/Grafana 接入**：Docker Compose 新增 Prometheus `:9090`、Grafana `:3000`，抓取 ingest/api/worker `/actuator/prometheus`，预置 StarShield Observability 看板。
+- ✅ **业务指标**：新增接入 QPS、限流次数、MQ 投递结果、RabbitMQ 队列深度、消费延迟、消费处理耗时。
+- ✅ **前端路由级拆包**：`App.vue` 改为路径路由 + dynamic import，Vite 构建页面业务 chunk 约 5-14KB；Element 相关 JS 降至约 446KB，ECharts 按需 chunk 约 522KB，PDF 导出库改为点击时加载。
+
+📌 2026-06-02 为**本地单体**压测/安全基线；2026-06-07 为 **Docker 微服务 + 新 ingest 模块** 联调记录；2026-06-08 为代码修复回归说明；2026-06-09 为限流、监控与前端构建优化说明。
 
 ---
 
@@ -50,6 +56,8 @@
 | MySQL（本机 Homebrew） | 3306 | 历史 `mvn spring-boot:run` 数据可能在此 |
 | RabbitMQ | 5672 | 消费者并发 5~20，prefetch 10，手动 ACK |
 | Redis | 6379 | 限流 / 敏感词 / 幂等键 |
+| Prometheus | 9090 | 抓取后端 JVM 指标与 StarShield 业务指标 |
+| Grafana | 3000 | StarShield Observability 看板，默认 `admin/starshield` |
 | 前端 Vite | 5173 | 代理 `/api`、`/ws` → 8080 |
 | 测试机 | — | macOS 本地（guoyunhaideMacBook-Air） |
 

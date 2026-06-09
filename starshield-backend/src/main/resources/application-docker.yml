@@ -32,6 +32,8 @@ starshield:
       - http://127.0.0.1:5173
   archive:
     es-enabled: ${STARSHIELD_ES_ENABLED:false}
+  rate-limit:
+    algorithm: ${STARSHIELD_RATE_LIMIT_ALGORITHM:sliding-window}
   ai:
     provider: ${STARSHIELD_AI_PROVIDER:lightweight}
     lightweight-url: ${STARSHIELD_AI_LIGHTWEIGHT_URL:http://ai-service:5050/score}
@@ -40,11 +42,14 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 logging:
   level:

@@ -4,6 +4,16 @@ import vue from '@vitejs/plugin-vue'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          pdf: ['html2pdf.js'],
+          vue: ['vue']
+        }
+      }
+    }
+  },
   server: {
     port: 5173,
     // 代理配置：将 /api 和 /ws 请求转发到后端，解决开发环境跨域问题

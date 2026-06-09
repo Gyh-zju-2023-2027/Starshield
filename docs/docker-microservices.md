@@ -84,10 +84,27 @@ cd starshield-frontend && npm run dev
 | `STARSHIELD_RATE_LIMIT_GLOBAL_QPS` | `20000` | 全局接入 QPS |
 | `STARSHIELD_RATE_LIMIT_IP_QPS` | `300` | 单 IP 接入 QPS |
 | `STARSHIELD_RATE_LIMIT_PLAYER_QPS` | `30` | 单玩家接入 QPS |
+| `STARSHIELD_RATE_LIMIT_ALGORITHM` | `sliding-window` | Redis 限流算法：`sliding-window` / `token-bucket` |
 
 ## 接入限流
 
-`starshield-ingest` 依赖 Redis 执行 Lua 原子固定窗口计数，扩容多个 ingest 实例时仍共享全局 / IP / player 三类限流。Redis 短暂不可用时默认降级到本机固定窗口；生产环境如需 fail-closed，可设置 `STARSHIELD_RATE_LIMIT_FALLBACK_TO_LOCAL=false`。
+`starshield-ingest` 默认依赖 Redis 执行 Lua + ZSet 滑动窗口限流，扩容多个 ingest 实例时仍共享全局 / IP / player 三类计数，避免固定窗口秒边界抖动。需要更平滑的突发吸收时可设置 `STARSHIELD_RATE_LIMIT_ALGORITHM=token-bucket` 切换为 Redis 令牌桶。Redis 短暂不可用时默认降级到本机令牌桶；生产环境如需 fail-closed，可设置 `STARSHIELD_RATE_LIMIT_FALLBACK_TO_LOCAL=false`。
+
+## Prometheus / Grafana
+
+`docker compose up -d --build` 会同时启动：
+
+| 服务 | 地址 | 说明 |
+|---|---|---|
+| Prometheus | `http://localhost:9090` | 抓取 `starshield-ingest` / `starshield-api` / `starshield-worker` 的 `/actuator/prometheus` |
+| Grafana | `http://localhost:3000` | 默认账号 `admin`，默认密码 `starshield`；预置 `StarShield Observability` 看板 |
+
+核心指标：
+
+- `starshield_ingest_requests_total`：接入 QPS，按 `outcome` 区分 attempt / accepted / rate_limited / error。
+- `starshield_mq_queue_ready`：RabbitMQ 主队列与 DLQ 的 Ready 消息数。
+- `starshield_mq_consumer_lag_seconds`：从接入口写入 MQ header 到 worker 开始消费的延迟。
+- `starshield_mq_consumer_processing_seconds`：worker 单条消息处理耗时。
 
 ## 本地仍用单体
 

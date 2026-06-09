@@ -152,7 +152,6 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
 import {
   analyzeBlockedMessages,
   searchBlockedMessages,
@@ -161,6 +160,7 @@ import {
 import MetricCard from '../components/ui/MetricCard.vue'
 import PageIntro from '../components/ui/PageIntro.vue'
 import SurfacePanel from '../components/ui/SurfacePanel.vue'
+import { graphic, init } from '../utils/echartsCore'
 import { escapeHtml, sanitizeHighlight } from '../utils/escapeHtml'
 
 const REFRESH_INTERVAL_MS = 15000
@@ -351,19 +351,19 @@ function parseDateTime(value) {
 
 function initRankChart() {
   if (!rankChartRef.value) return
-  rankChart = echarts.init(rankChartRef.value)
+  rankChart = init(rankChartRef.value)
   renderRankChart()
 }
 
 function initPlatformChart() {
   if (!platformChartRef.value) return
-  platformChart = echarts.init(platformChartRef.value)
+  platformChart = init(platformChartRef.value)
   renderPlatformChart()
 }
 
 function initTrendChart() {
   if (!trendChartRef.value) return
-  trendChart = echarts.init(trendChartRef.value)
+  trendChart = init(trendChartRef.value)
   renderTrendChart()
 }
 
@@ -405,7 +405,7 @@ function renderRankChart() {
         data: data.map((x) => x.count).reverse(),
         barMaxWidth: 22,
         itemStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+          color: new graphic.LinearGradient(0, 0, 1, 0, [
             { offset: 0, color: '#FF6B57' },
             { offset: 1, color: '#F7B955' }
           ]),
@@ -491,7 +491,7 @@ function renderTrendChart() {
         lineStyle: { width: 3, color: '#FF6B57' },
         itemStyle: { color: '#F7B955' },
         areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          color: new graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(255, 107, 87, 0.28)' },
             { offset: 1, color: 'rgba(255, 107, 87, 0.02)' }
           ])
@@ -630,4 +630,3 @@ onUnmounted(() => {
   box-shadow: 0 0 12px rgba(250, 204, 21, 0.14);
 }
 </style>
-
