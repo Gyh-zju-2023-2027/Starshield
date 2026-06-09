@@ -18,7 +18,7 @@ import java.util.Map;
  * 检索归档服务（双写至 ES）。
  */
 @Service
-@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class ArchiveSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(ArchiveSyncService.class);

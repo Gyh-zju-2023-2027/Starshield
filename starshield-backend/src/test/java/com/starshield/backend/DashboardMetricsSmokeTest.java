@@ -3,6 +3,7 @@ package com.starshield.backend;
 import com.starshield.backend.common.Result;
 import com.starshield.backend.service.DashboardControllerSupport;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 回归：MyBatis-Plus BaseMapper 需由 mybatis-plus-spring-boot3-starter 装配，否则 selectCount 不可用。
  */
 @SpringBootTest
+@EnabledIfEnvironmentVariable(named = "STARSHIELD_RUN_INTEGRATION_TESTS", matches = "true")
 class DashboardMetricsSmokeTest {
 
     @Autowired

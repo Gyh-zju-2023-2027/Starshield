@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.starshield.backend.model.AiModerationResult;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@EnabledIfEnvironmentVariable(named = "STARSHIELD_RUN_INTEGRATION_TESTS", matches = "true")
 class AiAnalysisServiceIntegrationTest {
 
     @Test

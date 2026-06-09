@@ -10,7 +10,7 @@ services:
       - mysql_data:/var/lib/mysql
       - ./starshield-backend/src/main/resources/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     ports:
-      - "3306:3306"
+      - "3307:3306"   # 宿主机 3307，避免与本机 Homebrew MySQL(3306) 冲突
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MYSQL_PASSWORD:-starshield}"]
       interval: 10s
@@ -57,11 +57,14 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker,docker-ingest
       RABBITMQ_HOST: rabbitmq
+      REDIS_HOST: redis
     depends_on:
+      redis:
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health/liveness"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -76,7 +79,8 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-starshield}
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
-      STARSHIELD_AI_PROVIDER: lightweight
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      STARSHIELD_AI_PROVIDER: ${STARSHIELD_AI_PROVIDER:-deepseek}
       STARSHIELD_AI_LIGHTWEIGHT_URL: http://ai-service:5050/score
     depends_on:
       mysql:
@@ -88,7 +92,7 @@ services:
       ai-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health/liveness"]
       interval: 15s
       timeout: 5s
       retries: 8
@@ -103,13 +107,17 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-starshield}
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      STARSHIELD_AI_PROVIDER: ${STARSHIELD_AI_PROVIDER:-deepseek}
+      STARSHIELD_ADMIN_API_KEY: ${STARSHIELD_ADMIN_API_KEY:-starshield-dev-admin-key}
+      BILIBILI_COOKIE: ${BILIBILI_COOKIE:-}
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health"]
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/actuator/health/liveness"]
       interval: 15s
       timeout: 5s
       retries: 8

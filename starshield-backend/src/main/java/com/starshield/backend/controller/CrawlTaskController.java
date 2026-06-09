@@ -1,6 +1,8 @@
 package com.starshield.backend.controller;
 
 import com.starshield.backend.common.Result;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.entity.CrawlTask;
 import com.starshield.backend.service.CrawlTaskService;
 import com.starshield.backend.service.SubmitCrawlTaskRequest;
@@ -11,6 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/crawl")
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class CrawlTaskController {
 
     @Autowired

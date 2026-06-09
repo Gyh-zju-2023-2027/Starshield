@@ -39,10 +39,10 @@ class RuleEngineServiceTest {
 
         // 验证结果
         assertEquals(ModerationDecision.PASS, result.getDecision());
-        assertEquals(20, result.getRiskScore()); // 精确匹配未命中时的默认分
+        assertEquals(10, result.getRiskScore());
         assertEquals("normal", result.getLabels());
         assertEquals("", result.getHitWords());
-        assertEquals("规则引擎未命中，布隆过滤器可能误判", result.getReason());
+        assertEquals("布隆过滤器未发现候选敏感词", result.getReason());
     }
 
     @Test
@@ -108,6 +108,17 @@ class RuleEngineServiceTest {
     }
 
     @Test
+    void shouldNormalizeSensitiveWordsBeforeMatching() {
+        Set<String> sensitiveWords = new HashSet<>(Arrays.asList("加V"));
+        when(mockSetOps.members("starshield:rules:sensitive_words")).thenReturn(sensitiveWords);
+
+        FastCheckResult result = ruleEngineService.fastCheck("想低价代练请加v");
+
+        assertEquals(ModerationDecision.REVIEW, result.getDecision());
+        assertTrue(result.getHitWords().contains("加V"));
+    }
+
+    @Test
     void shouldReturnPassForNullContentBasedOnActualBehavior() {
         // 准备测试数据 - 使用默认敏感词
         when(mockSetOps.members("starshield:rules:sensitive_words")).thenReturn(null);
@@ -117,9 +128,7 @@ class RuleEngineServiceTest {
 
         // 验证结果 - 根据实际行为验证
         assertEquals(ModerationDecision.PASS, result.getDecision());
-        // 实际行为可能返回10或20，根据布隆过滤器是否命中
-        assertTrue(result.getRiskScore() == 10 || result.getRiskScore() == 20, 
-                  "Expected risk score to be either 10 or 20, but was: " + result.getRiskScore());
+        assertEquals(10, result.getRiskScore());
     }
 
     @Test
@@ -132,9 +141,7 @@ class RuleEngineServiceTest {
 
         // 验证结果 - 根据实际行为验证
         assertEquals(ModerationDecision.PASS, result.getDecision());
-        // 实际行为可能返回10或20，根据布隆过滤器是否命中
-        assertTrue(result.getRiskScore() == 10 || result.getRiskScore() == 20, 
-                  "Expected risk score to be either 10 or 20, but was: " + result.getRiskScore());
+        assertEquals(10, result.getRiskScore());
     }
 
     @Test
@@ -147,7 +154,7 @@ class RuleEngineServiceTest {
 
         // 验证使用默认敏感词列表
         assertEquals(ModerationDecision.PASS, result.getDecision());
-        assertEquals(20, result.getRiskScore());
+        assertEquals(10, result.getRiskScore());
     }
 
     @Test
@@ -175,11 +182,9 @@ class RuleEngineServiceTest {
         // 测试不包含敏感词的内容
         FastCheckResult result = ruleEngineService.fastCheck("完全正常的内容");
 
-        // 验证结果 - 根据实际行为验证
+        // 验证 BloomFilter 安全快速排除
         assertEquals(ModerationDecision.PASS, result.getDecision());
-        // 根据实际测试结果，可能是10或20
-        assertTrue(result.getRiskScore() == 10 || result.getRiskScore() == 20, 
-                  "Expected risk score to be either 10 or 20, but was: " + result.getRiskScore());
+        assertEquals(10, result.getRiskScore());
     }
 
     @Test
@@ -201,17 +206,11 @@ class RuleEngineServiceTest {
         // 风险评分 = 55 + 10 * 15 = 205，但应被限制在95以内
         FastCheckResult result = ruleEngineService.fastCheck(contentBuilder.toString());
 
-        // 修复：根据实际实现验证 - 如果命中敏感词，风险评分应被限制在95以内
-        // 但考虑到布隆过滤器的行为，需要检查是否命中了敏感词
-        if (result.getHitWords() != null && !result.getHitWords().isEmpty()) {
-            // 如果命中了敏感词，风险评分应该被限制在95以内
-            assertTrue(result.getRiskScore() <= 95, "Risk score should be limited to 95, but was: " + result.getRiskScore());
-            // 如果命中多个敏感词，应该至少是REVIEW或BLOCK
-            assertTrue(result.getDecision().equals(ModerationDecision.BLOCK) || 
-                       result.getDecision().equals(ModerationDecision.REVIEW),
-                       "Decision should be REVIEW or BLOCK when sensitive words are hit, but was: " + result.getDecision());
+        assertEquals(ModerationDecision.BLOCK, result.getDecision());
+        assertEquals(95, result.getRiskScore());
+        for (String word : manyWords) {
+            assertTrue(result.getHitWords().contains(word));
         }
-        // 如果没有命中敏感词，这是布隆过滤器的假阴性情况，也是可接受的
     }
     @Test
     void shouldHandleBoundaryRiskScoreValuesBasedOnActualBehavior() {
@@ -226,16 +225,11 @@ class RuleEngineServiceTest {
 
         FastCheckResult result = ruleEngineService.fastCheck("词0 词1");
         
-        // 修复：如果确实命中了敏感词，决策不应为PASS
-        // 但是，由于布隆过滤器的特性，可能出现假阴性（即内容包含敏感词但布隆过滤器说不包含）
-        if (result.getHitWords() != null && !result.getHitWords().isEmpty()) {
-            // 如果命中了敏感词，则不应为PASS
-            assertNotEquals(ModerationDecision.PASS, result.getDecision(), 
-                           "Decision should not be PASS when sensitive words are hit");
-            assertTrue(result.getRiskScore() >= 80, 
-                      "Risk score should be at least 80 when 2 words are hit, but was: " + result.getRiskScore());
-        }
-        // 如果没有命中敏感词，这是布隆过滤器的假阴性情况，这种情况下返回PASS是可以接受的
+        assertEquals(ModerationDecision.BLOCK, result.getDecision());
+        assertTrue(result.getRiskScore() >= 80,
+                  "Risk score should be at least 80 when 2 words are hit, but was: " + result.getRiskScore());
+        assertTrue(result.getHitWords().contains("词0"));
+        assertTrue(result.getHitWords().contains("词1"));
     }
 
     @Test
@@ -248,16 +242,8 @@ class RuleEngineServiceTest {
         ruleEngineService.replaceSensitiveWords(wordsFor79Score);
 
         FastCheckResult result = ruleEngineService.fastCheck("词0");
-        // 修复：基于实际实现行为验证
-        if (result.getHitWords().isEmpty()) {
-            // 如果没有命中任何敏感词，说明布隆过滤器判断错误或者缓存未更新
-            assertEquals(ModerationDecision.PASS, result.getDecision());
-            assertTrue(result.getRiskScore() == 10 || result.getRiskScore() == 20);
-        } else {
-            // 如果命中了敏感词，那么不应该为PASS
-            assertNotEquals(ModerationDecision.PASS, result.getDecision(), "Decision should not be PASS when sensitive words are hit");
-            assertTrue(result.getRiskScore() < 80, "Risk score should be less than 80, but was: " + result.getRiskScore());
-            assertEquals(ModerationDecision.REVIEW, result.getDecision());
-        }
+        assertNotEquals(ModerationDecision.PASS, result.getDecision(), "Decision should not be PASS when sensitive words are hit");
+        assertTrue(result.getRiskScore() < 80, "Risk score should be less than 80, but was: " + result.getRiskScore());
+        assertEquals(ModerationDecision.REVIEW, result.getDecision());
     }
 }

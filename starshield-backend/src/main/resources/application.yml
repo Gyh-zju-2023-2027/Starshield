@@ -44,32 +44,43 @@ spring:
         # 手动确认，防止消息丢失
         acknowledge-mode: manual
 
-# ===================== Redis 配置 =====================
-  redis:
-    host: localhost
-    port: 6379
-    timeout: 3000ms
-
-  # ===================== Elasticsearch 配置 =====================
-  elasticsearch:
-    uris: http://localhost:9200
-
+# ===================== Redis / Elasticsearch 配置 =====================
   data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000ms
     elasticsearch:
       repositories:
         # 本地未启动 ES 时关闭仓储初始化，避免启动失败
         enabled: false
 
+  elasticsearch:
+    uris: http://localhost:9200
+
 # ===================== 星盾业务参数 =====================
 starshield:
   runtime:
     mode: monolith   # monolith | ingest | worker | api
+  security:
+    # 管理 / 控制面写操作 / reindex 鉴权；生产环境务必更换
+    admin-api-key: starshield-dev-admin-key
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
   archive:
     es-enabled: true
+  dashboard:
+    push-interval-ms: 5000
   rate-limit:
     global-qps: 20000
     ip-qps: 300
     player-qps: 30
+    window-ms: 1000
+    redis-enabled: true
+    fallback-to-local: true
+    key-prefix: starshield:rate-limit
   ai:
     provider: deepseek
     prompt-version: v2

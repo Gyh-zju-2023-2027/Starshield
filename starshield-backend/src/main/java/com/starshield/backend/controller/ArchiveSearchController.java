@@ -18,7 +18,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/archive")
-@CrossOrigin(origins = "*")
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ArchiveSearchController {
 

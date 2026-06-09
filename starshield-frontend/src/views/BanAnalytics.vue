@@ -161,6 +161,7 @@ import {
 import MetricCard from '../components/ui/MetricCard.vue'
 import PageIntro from '../components/ui/PageIntro.vue'
 import SurfacePanel from '../components/ui/SurfacePanel.vue'
+import { escapeHtml, sanitizeHighlight } from '../utils/escapeHtml'
 
 const REFRESH_INTERVAL_MS = 15000
 const FETCH_LIMIT = 500
@@ -311,21 +312,6 @@ function normalizeHighlightRow(row) {
     highlightContent: row?.highlightContent || message.content || '',
     highlights: row?.highlights || {}
   }
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function sanitizeHighlight(value) {
-  return escapeHtml(value)
-    .replace(/&lt;mark&gt;/g, '<mark>')
-    .replace(/&lt;\/mark&gt;/g, '</mark>')
 }
 
 function renderContent(item) {

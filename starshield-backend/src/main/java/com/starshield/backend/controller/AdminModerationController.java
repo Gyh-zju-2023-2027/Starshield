@@ -17,7 +17,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/admin/moderation")
-@CrossOrigin(origins = "*")
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class AdminModerationController {
 

@@ -35,7 +35,7 @@
             <h2 class="ss-section-title">新建爬取任务</h2>
             <p class="ss-section-copy">配置采集目标与速率限制。</p>
           </div>
-          <span class="ss-chip ss-chip--accent">BILIBILI</span>
+          <span class="ss-chip ss-chip--accent">{{ platformLabel }}</span>
         </div>
 
         <el-form label-position="top" class="space-y-5">
@@ -43,12 +43,15 @@
           <el-form-item label="任务类型">
             <el-select v-model="form.type" class="w-full">
               <el-option label="视频评论" value="video" />
-              <el-option label="直播间弹幕" value="live" />
+              <el-option label="直播间弹幕（实时）" value="live" />
+              <el-option label="第五人格微博数据集" value="weibo" />
             </el-select>
           </el-form-item>
 
-          <!-- 目标列表 -->
-          <el-form-item :label="form.type === 'live' ? '直播间（每行一个房间号或URL）' : '目标列表（每行一个 BV 号）'">
+          <el-form-item
+            v-if="form.type !== 'weibo'"
+            :label="form.type === 'live' ? '直播间（每行一个房间号或URL）' : '目标列表（每行一个 BV 号）'"
+          >
             <el-input
               v-model="form.targets"
               type="textarea"
@@ -56,6 +59,27 @@
               :placeholder="form.type === 'live' ? 'https://live.bilibili.com/12345\n67890' : 'BV1CSJxzCENA\nBV1xx123456'"
               class="!rounded-2xl"
             />
+          </el-form-item>
+
+          <el-form-item v-if="form.type === 'video' || form.type === 'live'" label="B 站 Cookie（推荐）">
+            <el-input
+              v-model="form.cookie"
+              type="textarea"
+              :rows="3"
+              placeholder="从浏览器复制 Cookie，需包含 SESSDATA；不填则仅能抓取少量精选评论"
+              class="!rounded-2xl"
+            />
+            <p class="mt-2 text-xs leading-relaxed text-slate-400">
+              打开 bilibili.com → F12 → 网络/应用 → Cookie，复制整段或至少 SESSDATA=...。
+              仅保存在本机浏览器，不会写入数据库。
+            </p>
+          </el-form-item>
+
+          <el-form-item v-else label="数据源">
+            <p class="text-sm text-slate-400 leading-relaxed">
+              自动从 HuggingFace 下载 IdentityV-weibo（约 3.1 万条玩家评论），
+              以 platform=WEIBO 写入数据库。
+            </p>
           </el-form-item>
 
           <!-- 目标条数 -->
@@ -110,7 +134,7 @@
                   任务 #{{ activeTask.id }}
                 </p>
                 <p class="text-sm text-slate-400">
-                  {{ activeTask.type === 'video' ? '视频评论' : '直播间弹幕' }}
+                  {{ taskTypeText(activeTask.type) }}
                 </p>
               </div>
             </div>
@@ -242,19 +266,22 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
+import { fetchCrawlTasks, stopCrawlTask, submitCrawlTask } from '../api/crawl'
 import MetricCard from '../components/ui/MetricCard.vue'
 import PageIntro from '../components/ui/PageIntro.vue'
 import SurfacePanel from '../components/ui/SurfacePanel.vue'
 
 const emit = defineEmits(['navigate'])
 
+const COOKIE_STORAGE_KEY = 'starshield_bili_cookie'
+
 // 表单数据
 const form = ref({
   type: 'video',
   targets: '',
   targetCount: 100,
-  rps: 20
+  rps: 20,
+  cookie: typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(COOKIE_STORAGE_KEY) || '' : ''
 })
 
 // 任务列表
@@ -284,29 +311,64 @@ const todayFinished = computed(() =>
 // 实时速率计算
 const currentRate = ref(0)
 
+const platformLabel = computed(() => {
+  const map = { video: 'BILIBILI', live: 'BILIBILI_LIVE', weibo: 'WEIBO' }
+  return map[form.value.type] || 'BILIBILI'
+})
+
+const taskTypeText = (type) => {
+  const map = {
+    video: '视频评论',
+    live: '直播间弹幕（实时 WebSocket）',
+    weibo: '第五人格微博数据集'
+  }
+  return map[type] || type
+}
+
 // 提交任务
 const submitTask = async () => {
-  const targets = form.value.targets
+  let targets = form.value.targets
     .split('\n')
     .map(v => v.trim())
     .filter(Boolean)
 
-  if (targets.length === 0) {
-    ElMessage.warning('请输入至少一个 BV 号')
+  if (form.value.type === 'weibo') {
+    targets = ['IdentityV-weibo']
+  } else if (targets.length === 0) {
+    ElMessage.warning(form.value.type === 'live' ? '请输入至少一个直播间' : '请输入至少一个 BV 号')
     return
+  }
+
+  const cookie = form.value.cookie?.trim()
+  if ((form.value.type === 'video' || form.value.type === 'live') && !cookie) {
+    try {
+      await ElMessageBox.confirm(
+        '未填写 B 站 Cookie 时，每个视频通常只能抓到少量精选评论。是否仍继续？',
+        'Cookie 未填写',
+        { confirmButtonText: '继续', cancelButtonText: '返回填写', type: 'warning' }
+      )
+    } catch {
+      return
+    }
   }
 
   submitting.value = true
   try {
-    const res = await axios.post('/api/crawl/tasks', {
+    const payload = {
       type: form.value.type,
       targets,
       targetCount: form.value.targetCount,
       rps: form.value.rps
-    })
+    }
+    if (cookie) {
+      payload.cookie = cookie
+      sessionStorage.setItem(COOKIE_STORAGE_KEY, cookie)
+    }
 
-    if (res.data.code === 200) {
-      const taskId = res.data.data
+    const res = await submitCrawlTask(payload)
+
+    if (res.code === 200) {
+      const taskId = res.data
       ElMessage.success(`任务已提交，ID：${taskId}`)
       form.value.targets = ''
 
@@ -328,7 +390,7 @@ const submitTask = async () => {
       startPolling()
       startRateCalculation()
     } else {
-      ElMessage.error(res.data.message || '提交失败')
+      ElMessage.error(res.message || '提交失败')
     }
   } catch (error) {
     ElMessage.error('提交任务失败')
@@ -341,9 +403,9 @@ const submitTask = async () => {
 // 获取任务列表
 const fetchTasks = async () => {
   try {
-    const res = await axios.get('/api/crawl/tasks?limit=20')
-    if (res.data.code === 200) {
-      const newTasks = res.data.data || []
+    const res = await fetchCrawlTasks(20)
+    if (res.code === 200) {
+      const newTasks = res.data || []
       
       // 更新现有任务
       newTasks.forEach(backendTask => {
@@ -380,7 +442,7 @@ const viewTask = (task) => {
     `
     <div class="space-y-2">
       <p><strong>任务 ID：</strong>${task.id}</p>
-      <p><strong>类型：</strong>${task.type === 'video' ? '视频评论' : '直播间弹幕'}</p>
+      <p><strong>类型：</strong>${taskTypeText(task.type)}</p>
       <p><strong>目标数量：</strong>${task.targetCount} 条</p>
       <p><strong>已抓取：</strong>${task.fetchedCount} 条</p>
       <p><strong>已推送：</strong>${task.pushedCount} 条</p>
@@ -412,7 +474,7 @@ const stopTask = async (id) => {
       }
     )
 
-    await axios.post(`/api/crawl/tasks/${id}/stop`)
+    await stopCrawlTask(id)
     ElMessage.success('任务已终止')
     fetchTasks()
   } catch (error) {

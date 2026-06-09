@@ -15,14 +15,21 @@ spring:
     username: ${RABBITMQ_USER:guest}
     password: ${RABBITMQ_PASSWORD:guest}
 
-  redis:
-    host: ${REDIS_HOST:redis}
-    port: 6379
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: 6379
 
   elasticsearch:
     uris: ${ELASTICSEARCH_URIS:http://elasticsearch:9200}
 
 starshield:
+  security:
+    admin-api-key: ${STARSHIELD_ADMIN_API_KEY:starshield-dev-admin-key}
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
   archive:
     es-enabled: ${STARSHIELD_ES_ENABLED:false}
   ai:

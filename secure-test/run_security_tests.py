@@ -36,7 +36,17 @@ from payloads import (
 )
 
 DEFAULT_HOST = "http://localhost:8080"
+DEFAULT_ADMIN_TOKEN = "starshield-dev-admin-key"
 TIMEOUT = 10.0
+
+# 模块级：run_all 前由 main 注入
+_ADMIN_TOKEN: Optional[str] = DEFAULT_ADMIN_TOKEN
+
+
+def _admin_headers() -> dict[str, str]:
+    if not _ADMIN_TOKEN:
+        return {}
+    return {"X-Admin-Token": _ADMIN_TOKEN}
 
 
 class Severity(str, Enum):
@@ -261,9 +271,11 @@ def test_xss_upload_stored(client: httpx.Client) -> tuple[Status, str, str, str]
         )
         if resp.status_code < 500:
             ok += 1
-    expected = "服务端不 500；XSS 防护依赖前端/展示层"
+    expected = "服务端不 500；展示层已做 HTML 转义"
     actual = f"{ok}/{len(XSS_PAYLOADS)} 未触发 500"
-    return Status.WARN, expected, actual, "建议在 Dashboard/Archive 展示层做 HTML 转义"
+    if ok == len(XSS_PAYLOADS):
+        return Status.PASS, expected, actual, "接入层正常入队；Dashboard/Archive 展示层已统一转义"
+    return Status.FAIL, expected, actual, "XSS payload 导致服务端异常"
 
 
 def test_oversized_payload(client: httpx.Client) -> tuple[Status, str, str, str]:
@@ -376,7 +388,10 @@ def test_archive_reindex_no_auth(client: httpx.Client) -> tuple[Status, str, str
 def test_path_traversal_moderation(client: httpx.Client) -> tuple[Status, str, str, str]:
     issues = []
     for path_id in PATH_TRAVERSAL:
-        resp = client.get(f"/api/admin/moderation/{path_id}/audit-logs")
+        resp = client.get(
+            f"/api/admin/moderation/{path_id}/audit-logs",
+            headers=_admin_headers(),
+        )
         if resp.status_code == 500:
             issues.append(path_id)
     expected = "非法 path id 返回 404/400，不 500"
@@ -390,7 +405,11 @@ def test_path_traversal_moderation(client: httpx.Client) -> tuple[Status, str, s
 
 
 def test_idempotency_missing_key(client: httpx.Client) -> tuple[Status, str, str, str]:
-    resp = client.post("/api/admin/moderation/999999999999/confirm-ban", json={})
+    resp = client.post(
+        "/api/admin/moderation/999999999999/confirm-ban",
+        json={},
+        headers=_admin_headers(),
+    )
     code, msg = _parse_result(resp)
     expected = "缺少 X-Idempotency-Key 应返回 409"
     actual = f"code={code} message={msg}"
@@ -400,14 +419,14 @@ def test_idempotency_missing_key(client: httpx.Client) -> tuple[Status, str, str
 
 
 def test_idempotency_reuse(client: httpx.Client) -> tuple[Status, str, str, str]:
-    key_resp = client.get("/api/admin/moderation/idempotency-key")
+    key_resp = client.get("/api/admin/moderation/idempotency-key", headers=_admin_headers())
     key_body = key_resp.json()
     idem_key = key_body.get("data", {}).get("idempotencyKey")
     if not idem_key:
         return Status.SKIP, "获取幂等键", "无 idempotencyKey", "Redis 或接口不可用"
 
     fake_id = 999999999999
-    headers = {"X-Idempotency-Key": idem_key}
+    headers = {**_admin_headers(), "X-Idempotency-Key": idem_key}
     r1 = client.post(f"/api/admin/moderation/{fake_id}/confirm-ban", headers=headers, json={})
     c1, _ = _parse_result(r1)
     r2 = client.post(f"/api/admin/moderation/{fake_id}/confirm-ban", headers=headers, json={})
@@ -421,7 +440,7 @@ def test_idempotency_reuse(client: httpx.Client) -> tuple[Status, str, str, str]
 
 
 def test_idempotency_invalid_key(client: httpx.Client) -> tuple[Status, str, str, str]:
-    headers = {"X-Idempotency-Key": str(uuid.uuid4())}
+    headers = {**_admin_headers(), "X-Idempotency-Key": str(uuid.uuid4())}
     resp = client.post(
         "/api/admin/moderation/999999999999/confirm-ban",
         headers=headers,
@@ -464,6 +483,7 @@ def test_batch_invalid_decision(client: httpx.Client) -> tuple[Status, str, str,
     resp = client.post(
         "/api/admin/moderation/batch",
         json={"ids": [1], "decision": "HACK", "operator": "sec-test"},
+        headers=_admin_headers(),
     )
     code, msg = _parse_result(resp)
     expected = "非法 decision 应 400"
@@ -616,12 +636,19 @@ def write_markdown_report(run: TestRun, path: str) -> None:
 
 
 def main() -> int:
+    global _ADMIN_TOKEN
     parser = argparse.ArgumentParser(description="StarShield 安全测试")
     parser.add_argument("--host", default=DEFAULT_HOST, help="后端 base URL")
+    parser.add_argument(
+        "--admin-token",
+        default=DEFAULT_ADMIN_TOKEN,
+        help="管理接口 X-Admin-Token（与 starshield.security.admin-api-key 一致）",
+    )
     parser.add_argument("--report", help="输出 Markdown 报告路径")
     parser.add_argument("--json", help="输出 JSON 结果路径")
     args = parser.parse_args()
 
+    _ADMIN_TOKEN = args.admin_token
     run = run_all(args.host)
     print_console(run)
 

@@ -1,9 +1,11 @@
 # StarShield 本地部署说明
 
-面向 macOS / Linux 本地开发。本文分为两部分：
+面向 macOS / Linux 本地开发。
 
-- `基础部署`：后端 + 前端 + 中间件，可完成常规联调
-- `大规模真实评论验证（可选）`：`bilichat-ingest` + `ai-service` 全链路压测
+| 形态 | 适用场景 | 入口 |
+|------|----------|------|
+| **单体 monolith** | 本地开发、爬取控制台、快速联调 | 本文 §4–§6 |
+| **Docker 微服务** | 接入压测、独立扩缩容 worker/ingest | 本文 §9；详见 [docs/docker-microservices.md](./docs/docker-microservices.md) |
 
 ---
 
@@ -12,16 +14,40 @@
 | 依赖 | 说明 |
 |------|------|
 | JDK 17 | `java -version` |
-| Maven 3.8+ | `mvn -version`（项目可用 Toolchains 固定 JDK 17，见 `.mvn/toolchains.xml`） |
+| Maven 3.8+ | `mvn -version`（可用 Toolchains 固定 JDK 17，见 `.mvn/toolchains.xml`） |
 | Node.js 18+ / npm | `node -v` |
-| Python 3.10+（可选） | `python3 --version`（`ai-service`、`bilichat-ingest` 需要） |
-| MySQL 8 | `mysql --version` |
+| Python 3.10+（可选） | `ai-service`、`bilichat-ingest`、爬取控制台需要 |
+| MySQL 8 | 单体默认 **3306**；Docker 映射 **3307** |
 | RabbitMQ 3.x | 消息入队与消费 |
-| Redis | **规则控制台**（敏感词 / Prompt）必需 |
+| Redis | **接入限流**、规则控制台（敏感词 / Prompt）与引擎 A 必需 |
+| Docker（可选） | `docker compose` 微服务栈 |
 
 ---
 
-## 2. 安装并启动中间件
+## 2. 密钥与 `.env`（推荐）
+
+在**仓库根目录**创建 `.env`（已在 `.gitignore` 中，勿提交）：
+
+```bash
+# DeepSeek（战报 AI 总结、引擎 B 复核）
+DEEPSEEK_API_KEY=sk-xxxxxxxx
+
+# B 站爬取默认 Cookie（可选；前端控制台填写会覆盖）
+BILIBILI_COOKIE=SESSDATA=xxx; bili_jct=xxx; ...
+
+# Docker MySQL 密码（可选，默认 starshield）
+MYSQL_PASSWORD=starshield
+```
+
+| 变量 | 用途 |
+|------|------|
+| `DEEPSEEK_API_KEY` | 单体读取环境变量 / `.env` 回退；Docker 注入 `starshield-api`、`starshield-worker` |
+| `BILIBILI_COOKIE` | CLI 爬取 `--cookie` 的替代；Docker API 容器内 Python 任务的默认 Cookie |
+| `MYSQL_PASSWORD` | `docker compose` 中 MySQL root 密码 |
+
+---
+
+## 3. 安装并启动中间件
 
 **macOS（Homebrew）示例：**
 
@@ -31,57 +57,68 @@ brew services start mysql@8.0
 brew services start rabbitmq
 brew services start redis
 
-rabbitmq-plugins enable rabbitmq_management   # 可选：Web 管理 http://localhost:15672 ，账号 guest/guest
+rabbitmq-plugins enable rabbitmq_management   # 可选：http://localhost:15672 guest/guest
 ```
 
-**Linux：** 用发行版包管理器安装 `mysql-server`、`rabbitmq-server`、`redis-server` 并 `systemctl start` 即可。
+**Linux：** 用发行版包管理器安装并 `systemctl start` 即可。
 
 ---
 
-## 3. 数据库
+## 4. 数据库（单体 / 本机 MySQL 3306）
 
-**首次建库建表**（在仓库根目录执行，路径按实际调整）：
+**首次建库建表**（仓库根目录）：
 
 ```bash
 mysql -u root -p < starshield-backend/src/main/resources/init.sql
+mysql -u root -p starshield < starshield-backend/src/main/resources/migrate_daily_report.sql
 ```
 
-**可选：导入测试数据**（审核后台 / 大屏联调，`chat_message_log` 约 1000 条）：
+**可选：导入测试数据**（约 1000 条合成数据，非 B 站真实评论）：
 
 ```bash
 mysql -u root -p starshield < starshield-backend/src/main/resources/seed_chat_message_1000.sql
 ```
 
-若库已存在但表结构偏旧、缺 `decision` 等列，可先执行 `migrate_chat_message_log.sql`，或删库后重新执行 `init.sql`。
+若表结构偏旧、缺 `decision` 等列，可删库后重跑 `init.sql`，或执行 `migrate_chat_message_log.sql`。
+
+**清理压测脏数据**（Locust / 安全测试写入后，只保留真实 B 站评论 `BILI_*`）：
+
+```bash
+mysql -u root -p starshield < scripts/cleanup-stress-test-data.sql
+```
 
 ---
 
-## 4. 后端配置与启动
+## 5. 后端配置与启动（单体）
 
 1. 编辑 `starshield-backend/src/main/resources/application.yml`：
-   - 将 **`spring.datasource.password`** 改为本机 MySQL 密码
-   - 若 RabbitMQ / Redis 非本机默认端口，同步修改对应段
-   - 若要接入轻量模型服务，设置 `starshield.ai.provider=lightweight`，并配置 `starshield.ai.lightweight-url`
+   - **`spring.datasource.password`** → 本机 MySQL 密码
+   - RabbitMQ / Redis 非默认端口时同步修改
+   - 默认 `starshield.ai.provider=deepseek`，需配置 `DEEPSEEK_API_KEY`（见 §2）
+   - 若只用轻量模型：`starshield.ai.provider=lightweight` + `starshield.ai.lightweight-url`
 2. 启动：
 
 ```bash
 cd starshield-backend
 mvn spring-boot:run
-# 或：mvn clean package -DskipTests && java -jar target/starshield-backend-1.0.0-SNAPSHOT.jar
 ```
 
-控制台出现星盾启动横幅且进程监听 **8080** 即成功。
+控制台监听 **8080** 即成功。
 
 **快速自检：**
 
 ```bash
 curl -s http://localhost:8080/api/dashboard/metrics
-# 期望返回 JSON，且含 "code":200（需 MySQL 正常、依赖已就绪）
+curl -s http://localhost:8080/api/control/rules/sensitive-words
+curl -s http://localhost:8080/api/control/prompt
+# 期望 code=200；规则控制台应返回默认敏感词与 V2 Prompt
 ```
+
+> **Redis 说明**：后端使用 `spring.data.redis.*`（Spring Boot 3）。首次启动会自动向 Redis 写入默认敏感词库与系统 Prompt；接入层也会用 Redis 做全局 / IP / player 分布式限流，需保证 Redis 已启动。
 
 ---
 
-## 5. 前端
+## 6. 前端
 
 ```bash
 cd starshield-frontend
@@ -89,44 +126,39 @@ npm install
 npm run dev
 ```
 
-浏览器打开 **http://localhost:5173**。`vite.config.js` 已将 **`/api` 与 `/ws` 代理到 8080**，请始终通过该地址访问，勿直接打开打包后的 `index.html` 以免接口跨域失败。
+浏览器打开 **http://localhost:5173**。`/api` 与 `/ws` 代理到 **8080**，请始终通过 Vite 地址访问。
+
+| 页面 | 说明 |
+|------|------|
+| 数据大屏 | 实时指标与最新发言 |
+| 人工复核 | 待审队列 |
+| 规则控制台 | 敏感词 / Prompt 热替换（读写 Redis） |
+| 爬取控制台 | B 站评论 / 直播 / 微博数据集（**需单体后端**，见 §8） |
+| AI 治理战报 | 按日统计 + DeepSeek 总结 |
 
 ---
 
-## 6. 推荐启动顺序
+## 7. 推荐启动顺序（单体）
 
 1. MySQL → 2. Redis → 3. RabbitMQ → 4. 后端 → 5. 前端  
 
-（Elasticsearch 默认关闭，检索走 MySQL；若启用需改 `application.yml` 与 `starshield.archive.es-enabled`。）
+（Elasticsearch 默认关闭，归档检索走 MySQL；启用见附录 ES 章节。）
 
 ---
 
-## 7. 大规模真实评论验证（可选）
+## 8. B 站评论爬取
 
-> 目标：使用 `bilichat-ingest` 抓取 B 站评论并推送到 StarShield，验证
-> `MQ → Consumer → 引擎A/B → 落库 → 大屏` 全链路。
+### 8.1 方式 A：前端爬取控制台（推荐）
 
-### 7.1 启动 ai-service（轻量模型）
+**前提**：使用**单体** `mvn spring-boot:run`（后端需能执行宿主机 `bilichat-ingest/` 下的 Python）。
 
-```bash
-cd ai-service
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+1. 登录 [bilibili.com](https://www.bilibili.com)，F12 → Application → Cookies
+2. 复制 Cookie（**至少含 `SESSDATA`**）
+3. 前端 → **爬取控制台** → 粘贴 Cookie → 填写 BV 号 → 提交
 
-# 默认使用 5050 端口（与项目报告/脚本一致）
-PORT=5050 .venv/bin/python serve.py
-```
+> 未填 Cookie 时，访客模式每个视频通常只能抓到少量「精选评论」。Cookie 仅存于浏览器 `sessionStorage`，**不落库**。
 
-### 7.2 以 lightweight 模式启动后端
-
-```bash
-cd starshield-backend
-STARSHIELD_AI_PROVIDER=lightweight \
-STARSHIELD_AI_LIGHTWEIGHT_URL=http://127.0.0.1:5050/score \
-mvn spring-boot:run
-```
-
-### 7.3 运行 ingest 脚本
+### 8.2 方式 B：命令行 `bilichat-ingest`
 
 ```bash
 cd bilichat-ingest
@@ -136,11 +168,14 @@ python3 -m venv .venv
 .venv/bin/python ingest_comments.py \
   --bvid-file bvids.txt \
   --target-count 12000 \
+  --cookie "$BILIBILI_COOKIE" \
   --rps 50 --workers 16 \
   -v --log-file run.log
 ```
 
-### 7.4 观察链路结果
+也可用环境变量：`export BILIBILI_COOKIE='SESSDATA=...'`（与 `--cookie` 等价）。
+
+### 8.3 观察链路
 
 ```bash
 cd bilichat-ingest
@@ -149,32 +184,127 @@ cd bilichat-ingest
 
 ---
 
-## 8. 常见问题
+## 9. Docker 微服务部署
 
-| 现象 | 处理 |
-|------|------|
-| 前端表格 / 大屏全是空或 No Data | 打开开发者工具 **Network**：若接口为 **500**，先看后端日志；数据库接口需 **MyBatis-Plus 正确依赖**（`mybatis-plus-spring-boot3-starter`），并确认 MySQL 可连。 |
-| `Access denied`（MySQL） | 检查 `application.yml` 中用户名、密码、库名 `starshield`。 |
-| `Connection refused :5672` | 启动 RabbitMQ。 |
-| 规则控制台报错 / 无数据 | 启动 **Redis**；未配置时部分接口会失败。 |
-| 大量 `429 Too Many Requests` | 降低 ingest `--rps`；或提高 `starshield.rate-limit.ip-qps`（默认 300）。 |
-| `verify_pipeline` 一直无增量 | 检查后端消费者日志、RabbitMQ 队列积压与死信队列。 |
-| 使用轻量模型但命中率异常低 | 检查 `STARSHIELD_AI_PROVIDER=lightweight` 与 `STARSHIELD_AI_LIGHTWEIGHT_URL` 是否生效。 |
-| 压测成功但库里没数据 | 上传只入队，需 **消费者** 消费成功才落库；看 RabbitMQ 队列是否积压或进死信。 |
-| `Table ... doesn't exist` | 执行 `init.sql`。 |
-| `npm install` 权限错误 | `npm install --cache /tmp/npm-cache` |
-| 编译报 `TypeTag :: UNKNOWN` 等 | 使用 **JDK 17** 构建，并检查 `.mvn/toolchains.xml` 中 `jdkHome`。 |
+```bash
+# 仓库根目录；确保 .env 已配置 DEEPSEEK_API_KEY 等
+docker compose up -d --build
+docker compose ps
+```
+
+| 项 | 说明 |
+|----|------|
+| 对外入口 | http://localhost:8080（Nginx 网关） |
+| MySQL | 宿主机 **3307** → 容器 3306，密码默认 `starshield` |
+| 前端 | 仍用 `npm run dev`，代理到 8080 |
+| DeepSeek | `.env` 中 `DEEPSEEK_API_KEY` 自动注入 api/worker |
+| 规则控制台 | 启动时自动初始化 Redis 默认词库与 Prompt |
+
+**自检：**
+
+```bash
+curl -s http://localhost:8080/api/dashboard/metrics | head -c 200
+curl -s http://localhost:8080/api/control/rules/sensitive-words
+```
+
+### 9.1 本机 MySQL → Docker MySQL 数据迁移
+
+本机 Homebrew MySQL（3306）与 Docker MySQL（3307）并存。迁移真实数据：
+
+```bash
+# 1. Docker 侧补 daily_report_cache 表
+mysql -u root -pstarshield -h 127.0.0.1 -P 3307 starshield \
+  < starshield-backend/src/main/resources/migrate_daily_report.sql
+
+# 2. 一键迁移（会提示本机 MySQL 密码）
+MYSQL_LOCAL_PASSWORD='你的本机密码' ./scripts/migrate-local-to-docker.sh
+```
+
+脚本只导出本机**实际存在的表**（常见：`chat_message_log`、`moderation_audit_log`、`daily_report_cache`；**不含** `crawl_task` 若本机无此表）。
+
+迁移后在 Docker 库清理压测数据：
+
+```bash
+mysql -u root -pstarshield -h 127.0.0.1 -P 3307 starshield \
+  < scripts/cleanup-stress-test-data.sql
+```
+
+### 9.2 爬取控制台与 Docker 的限制
+
+Docker **API 容器内没有** `bilichat-ingest` 与 Python venv，**前端爬取控制台在纯 Docker 模式下无法拉起任务**。可选方案：
+
+- 开发爬取功能时用 **单体后端**（§5）
+- 或直接在宿主机运行 §8.2 CLI，推送目标仍为 `http://localhost:8080/api`
 
 ---
 
-## 附录：端口一览
+## 10. 大规模真实评论验证（可选）
+
+> 验证 `ingest → MQ → 双引擎 → 落库 → 大屏` 全链路。
+
+### 10.1 启动 ai-service（轻量预筛）
+
+```bash
+cd ai-service
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+PORT=5050 .venv/bin/python serve.py
+```
+
+### 10.2 以 lightweight 模式启动后端
+
+```bash
+cd starshield-backend
+STARSHIELD_AI_PROVIDER=lightweight \
+STARSHIELD_AI_LIGHTWEIGHT_URL=http://127.0.0.1:5050/score \
+mvn spring-boot:run
+```
+
+### 10.3 运行 ingest（务必带 Cookie）
+
+```bash
+cd bilichat-ingest
+.venv/bin/python ingest_comments.py \
+  --bvid-file bvids.txt \
+  --target-count 12000 \
+  --cookie "$BILIBILI_COOKIE" \
+  --rps 50 --workers 16 \
+  -v --log-file run.log
+```
+
+---
+
+## 11. 常见问题
+
+| 现象 | 处理 |
+|------|------|
+| 前端表格 / 大屏空或 No Data | 看 Network 是否 500；确认 MySQL 可连、消费者无积压 |
+| `Access denied`（MySQL） | 检查 `application.yml` 密码；Docker 用 `-P 3307 -pstarshield` |
+| `Connection refused :5672` | 启动 RabbitMQ |
+| 规则控制台空白 / 500 | 启动 **Redis**；Docker 需重建 api/worker 使 `spring.data.redis` 生效 |
+| 规则控制台无默认词 | 重启后端，日志应出现「已初始化默认敏感词库 / Prompt」 |
+| B 站只能抓几条评论 | 在前端或 CLI 提供含 **SESSDATA** 的 Cookie |
+| 爬取控制台提交后无反应 | 确认使用**单体**后端且已安装 Python 依赖；Docker 模式见 §9.2 |
+| DeepSeek 战报「AI 服务暂不可用」 | 检查 `DEEPSEEK_API_KEY`；402 表示账户余额不足 |
+| 数据量异常大 / 全是 AAAA 压测 | 执行 `scripts/cleanup-stress-test-data.sql` |
+| 大量 `429 Too Many Requests` | 降低 ingest `--rps` 或提高 `starshield.rate-limit.ip-qps` |
+| 压测成功但库里没数据 | 上传只入队，需 worker 消费成功；看 RabbitMQ 队列与死信 |
+| `Table ... doesn't exist` | 执行 `init.sql` |
+| `mysqldump: Couldn't find table: crawl_task` | 本机库无此表，导出时不要包含它 |
+| `npm install` 权限错误 | `npm install --cache /tmp/npm-cache` |
+| 编译 `TypeTag :: UNKNOWN` | 使用 JDK 17，检查 `.mvn/toolchains.xml` |
+
+---
+
+## 附录 A：端口一览
 
 | 服务 | 端口 |
 |------|------|
-| 后端 API | 8080 |
+| 后端 API（单体 / Docker 网关） | 8080 |
 | 前端（Vite） | 5173 |
-| ai-service（可选） | 5050（可通过 `PORT` 覆盖） |
-| MySQL | 3306 |
+| ai-service（可选） | 5050 |
+| MySQL（本机） | 3306 |
+| MySQL（Docker 映射） | **3307** |
 | Redis | 6379 |
 | RabbitMQ AMQP | 5672 |
 | RabbitMQ 管理页 | 15672 |
@@ -182,161 +312,47 @@ cd bilichat-ingest
 
 ---
 
-## 附录：启用 P6 Elasticsearch 归档检索
+## 附录 B：运维脚本
 
-默认配置下 `starshield.archive.es-enabled=false`，归档检索走 MySQL 兜底。若要测试 P6 的 ES 检索、聚合分析与双写链路：
+| 脚本 | 用途 |
+|------|------|
+| `scripts/migrate-local-to-docker.sh` | 本机 3306 → Docker 3307 数据迁移 |
+| `scripts/cleanup-stress-test-data.sql` | 删除压测/安全测试数据，保留 `BILI_*` 真实评论 |
+| `scripts/init-es-archive-index.sh` | 初始化 ES 归档索引 |
 
-### 1. 启动 Elasticsearch 8.x
+---
 
-无需 Docker。推荐使用 Elasticsearch 官方 `.tar.gz` 归档包启动一个本地单节点 ES 8.x，配置关闭安全认证，方便本地联调。
+## 附录 C：启用 P6 Elasticsearch 归档检索
 
-**1.1 下载并解压 Elasticsearch 8.12.2**
+默认 `starshield.archive.es-enabled=false`，检索走 MySQL 兜底。
 
-Apple Silicon（M1/M2/M3）Mac：
+### C.1 启动 Elasticsearch 8.x
+
+Apple Silicon Mac 示例：
 
 ```bash
-mkdir -p .local
-cd .local
-
+mkdir -p .local && cd .local
 curl -LO https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-aarch64.tar.gz
 tar -xzf elasticsearch-8.12.2-darwin-aarch64.tar.gz
 cd ..
-```
 
-如果 `curl` 下载很慢，可以中断后使用 `aria2` 多连接断点续传：
-
-```bash
-brew install aria2
-
-cd .local
-aria2c -c -x 16 -s 16 -k 1M \
-  -o elasticsearch-8.12.2-darwin-aarch64.tar.gz \
-  https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-aarch64.tar.gz
-tar -xzf elasticsearch-8.12.2-darwin-aarch64.tar.gz
-cd ..
-```
-
-Intel Mac：
-
-```bash
-mkdir -p .local
-cd .local
-
-curl -LO https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-x86_64.tar.gz
-tar -xzf elasticsearch-8.12.2-darwin-x86_64.tar.gz
-cd ..
-```
-
-Intel Mac 的 `aria2` 加速下载命令：
-
-```bash
-brew install aria2
-
-cd .local
-aria2c -c -x 16 -s 16 -k 1M \
-  -o elasticsearch-8.12.2-darwin-x86_64.tar.gz \
-  https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-8.12.2-darwin-x86_64.tar.gz
-tar -xzf elasticsearch-8.12.2-darwin-x86_64.tar.gz
-cd ..
-```
-
-说明：`brew install elasticsearch` 已不适合作为本项目安装方式；Homebrew core 中没有可用的 `elasticsearch` formula，Elastic 官方 Homebrew tap 也主要用于 Elastic Stack 旧式 Homebrew 安装，不如本地归档包方式可控。
-
-**1.2 启动本地单节点 ES**
-
-Elasticsearch 自带兼容 JDK，通常不需要额外安装 Java。首次启动会比较慢，保持该终端不要关闭：
-
-```bash
 ES_JAVA_OPTS="-Xms1g -Xmx1g" \
 .local/elasticsearch-8.12.2/bin/elasticsearch \
   -E discovery.type=single-node \
   -E xpack.security.enabled=false
 ```
 
-如果提示 macOS 安全拦截，可在“系统设置 → 隐私与安全性”中允许该程序，或对解压目录执行：
+验证：`curl http://localhost:9200`
 
-```bash
-xattr -dr com.apple.quarantine .local/elasticsearch-8.12.2
-```
-
-**1.3 验证 ES 是否可访问**
-
-另开一个终端，在仓库根目录执行：
-
-```bash
-curl http://localhost:9200
-```
-
-期望能看到类似以下 JSON，且包含 `version.number`：
-
-```json
-{
-  "name": "...",
-  "cluster_name": "docker-cluster",
-  "version": {
-    "number": "8.12.2"
-  }
-}
-```
-
-如果提示 `Failed to connect to localhost port 9200`，说明 ES 还没有启动完成，等待几秒后重试；如果仍失败，回到 ES 启动终端查看错误日志。
-
-如果本机磁盘剩余空间较少，ES 可能因为默认磁盘水位线不分配 shard。仅用于本地测试时，可以把水位线临时调低到 5GB 左右：
-
-```bash
-curl -X PUT "http://localhost:9200/_cluster/settings" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "transient": {
-      "cluster.routing.allocation.disk.watermark.low": "10gb",
-      "cluster.routing.allocation.disk.watermark.high": "5gb",
-      "cluster.routing.allocation.disk.watermark.flood_stage": "1gb"
-    }
-  }'
-
-curl -X POST "http://localhost:9200/_cluster/reroute?retry_failed=true"
-```
-
-### 2. 创建归档索引和别名
-
-在仓库根目录执行：
+### C.2 创建归档索引
 
 ```bash
 bash scripts/init-es-archive-index.sh
 ```
 
-该脚本会创建物理索引 `chat_message_archive_v1`，并绑定读写别名 `chat_message_archive`。默认使用不依赖 IK 插件的本地测试 Mapping：`chat_message_archive_v1_mapping_standard.json`。
+### C.3 启用后端 ES 路径
 
-如果本机已经存在名为 `chat_message_archive` 的物理索引，脚本会直接复用该索引作为归档索引；ES 不允许同名索引和同名别名同时存在。
-
-如果你的 ES 已安装匹配版本的 IK 分词插件，可以改用 IK Mapping：
-
-```bash
-MAPPING_FILE=starshield-backend/src/main/resources/es/chat_message_archive_v1_mapping.json \
-bash scripts/init-es-archive-index.sh
-```
-
-验证别名：
-
-```bash
-curl -s "http://localhost:9200/_cat/aliases/chat_message_archive?v"
-```
-
-如果复用了 `chat_message_archive` 物理索引，则用下面命令验证索引：
-
-```bash
-curl -s "http://localhost:9200/chat_message_archive/_count"
-```
-
-可选：如果 ES 不在默认地址，用 `ES_URL` 指定：
-
-```bash
-ES_URL=http://127.0.0.1:9200 bash scripts/init-es-archive-index.sh
-```
-
-### 3. 启用后端 ES 路径
-
-然后编辑 `starshield-backend/src/main/resources/application.yml`：
+编辑 `application.yml`：
 
 ```yaml
 starshield:
@@ -344,94 +360,32 @@ starshield:
     es-enabled: true
 ```
 
-启动后端后，可用以下接口验证：
+验证：
 
 ```bash
-# 可选：如果先通过 seed_chat_message_1000.sql 导入了 MySQL 测试数据，先回填到 ES
 curl -X POST "http://localhost:8080/api/archive/reindex?batchSize=500&maxRows=1000"
-
 curl -s "http://localhost:8080/api/archive/search?decision=BLOCK&limit=10"
-curl -s "http://localhost:8080/api/archive/analysis?decision=BLOCK&topHitLimit=5"
 ```
 
-后端日志出现 `path=ES` 表示命中 ES 路径；出现 `path=MYSQL` 表示 ES 未启用或查询失败，系统正在临时降级。
+日志 `path=ES` 表示命中 ES；`path=MYSQL` 为降级。
 
-### 4.压力测试
+---
 
-#### 环境准备
+## 附录 D：压力测试
 
-##### Python 依赖
+详见 `stress-test/` 目录。
 
 ```bash
-pip install -r requirements.txt
+cd stress-test
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/locust -f locustfile_ingest.py --host=http://localhost:8080
 ```
 
-##### Node.js 依赖
+压测会产生大量 `vu*_p*` 合成数据；联调真实评论后建议执行 `scripts/cleanup-stress-test-data.sql`。
+
+WebSocket 大屏压测：
 
 ```bash
 npm install ws
+node ws_dashboard_load.js --connections 300
 ```
-
-启动终端后，进行如下测试
-
-##### 场景一：海量并发消息摄取
-
-**脚本**：`locustfile_ingest.py`
-
-##### 启动方式：
-
-```bash
-locust -f locustfile_ingest.py --host=http://localhost:8080
-```
-
-浏览器打开 `http://localhost:8089`，填入并发用户数和 Spawn rate，点击 **Start swarming**。
-
-建议参数：
-
-| 场景     | Users | Spawn rate |
-| -------- | ----- | ---------- |
-| 初步摸底 | 100   | 10         |
-| 中等压力 | 300   | 30         |
-| 极限冲击 | 600   | 100        |
-
-##### 场景二：大屏 WebSocket 多开长连接
-
-**脚本**：`ws_dashboard_load.js`
-
-##### 基本用法
-
-```bash
-# 默认 200 个连接
-node ws_dashboard_load.js
-
-# 指定连接数
-node ws_dashboard_load.js --connections 500
-
-# 含慢客户端（10 个连接人为延迟 500ms，测试后端广播背压）
-node ws_dashboard_load.js --connections 500 --slow 10
-
-# 指向非本地服务
-node ws_dashboard_load.js --host ws://10.0.0.5:8080 --connections 300
-```
-
-#### 联合压测（终极场景）
-
-同时运行场景一和场景二，模拟真实生产环境：大量玩家发言 + 多个运营大屏同时在线。
-
-```bash
-# 终端 1：Locust 摄取压测（阶梯加压）
-locust -f locustfile_ingest.py --host=http://localhost:8080
-
-# 终端 2：WebSocket 大屏多开（含慢客户端）
-node ws_dashboard_load.js --connections 300 --slow 10
-```
-
-**联合观测要点**：
-
-1. RabbitMQ `chat.message.queue` 的 Ready 数在 WS 连接建立前后是否有变化
-   - 若 WS 连上后 Ready 才开始堆积 → 广播占用了消费线程资源
-   - 若 WS 连上前后无差异 → 瓶颈在 DeepSeek / MySQL，与 WS 无关
-2. Locust 的 P99 延迟曲线在 WS 连接数爬升期间是否抖动
-   - 若抖动 → WebSocket 握手与 HTTP 请求共用了 Tomcat 线程池资源
-3. 慢客户端（`--slow 10`）在线期间，后端 JVM 堆内存是否线性上涨
-   - 若上涨不收敛 → `DashboardPushService` 广播缓冲区存在内存泄漏风险

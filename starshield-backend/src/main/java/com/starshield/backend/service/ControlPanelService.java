@@ -1,5 +1,7 @@
 package com.starshield.backend.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import com.starshield.backend.config.runtime.EnabledOnMode;
@@ -17,7 +19,10 @@ import java.util.Set;
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class ControlPanelService {
 
+    private static final Logger log = LoggerFactory.getLogger(ControlPanelService.class);
+
     private static final String SENSITIVE_WORD_KEY = "starshield:rules:sensitive_words";
+    static final List<String> DEFAULT_SENSITIVE_WORDS = List.of("傻逼", "代充", "加V", "点击链接", "色情");
     private static final String PROMPT_KEY = "starshield:ai:prompt:current";
     private static final String PROMPT_VERSIONED_KEY_PREFIX = "starshield:ai:prompt:";
     private static final String PROMPT_COMPAT_KEY_PREFIX = "prompt:";
@@ -66,9 +71,31 @@ public class ControlPanelService {
     public List<String> getSensitiveWords() {
         Set<String> values = stringRedisTemplate.opsForSet().members(SENSITIVE_WORD_KEY);
         if (values == null || values.isEmpty()) {
-            return List.of("傻逼", "代充", "加V", "点击链接", "色情");
+            return DEFAULT_SENSITIVE_WORDS;
         }
         return new ArrayList<>(values);
+    }
+
+    /**
+     * Redis 无配置时写入默认敏感词与 Prompt，供控制台展示与引擎 A/B 热加载。
+     */
+    public void ensureDefaultsSeeded() {
+        Long wordCount = stringRedisTemplate.opsForSet().size(SENSITIVE_WORD_KEY);
+        if (wordCount == null || wordCount == 0) {
+            replaceSensitiveWords(DEFAULT_SENSITIVE_WORDS);
+            log.info("[控制台] 已初始化默认敏感词库，共 {} 条", DEFAULT_SENSITIVE_WORDS.size());
+        }
+
+        String version = normalizeVersion(promptVersion);
+        String prompt = getFirstNonBlank(
+                stringRedisTemplate.opsForValue().get(versionedPromptKey(version)),
+                stringRedisTemplate.opsForValue().get(compatPromptKey(version)),
+                stringRedisTemplate.opsForValue().get(PROMPT_KEY)
+        );
+        if (prompt == null) {
+            setPrompt(DEFAULT_PROMPT_V2);
+            log.info("[控制台] 已初始化默认 Prompt ({})", version);
+        }
     }
 
     /**

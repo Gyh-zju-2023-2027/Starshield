@@ -6,9 +6,11 @@ import com.starshield.backend.common.Result;
 import com.starshield.backend.config.RabbitMQConfig;
 import com.starshield.backend.config.runtime.EnabledOnMode;
 import com.starshield.backend.config.runtime.RuntimeMode;
+import com.starshield.backend.dto.ChatMessageUploadRequest;
 import com.starshield.backend.entity.ChatMessageLog;
 import com.starshield.backend.service.IngestionRateLimiterService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -19,7 +21,6 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/chat")
-@CrossOrigin(origins = "*")
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.INGEST})
 public class ChatMessageController {
 
@@ -43,9 +44,9 @@ public class ChatMessageController {
      * @author AI (under P2 supervision)
      */
     @PostMapping("/upload")
-    public Result<Void> upload(@RequestBody ChatMessageLog message, HttpServletRequest request) {
-        String playerId = message.getPlayerId();
-        String clientIp = extractClientIp(request);
+    public Result<Void> upload(@Valid @RequestBody ChatMessageUploadRequest request, HttpServletRequest httpRequest) {
+        String playerId = request.getPlayerId();
+        String clientIp = extractClientIp(httpRequest);
 
         if (!rateLimiterService.allowGlobal()) {
             return Result.error(429, "全局限流触发，请稍后重试");
@@ -55,6 +56,14 @@ public class ChatMessageController {
         }
         if (!rateLimiterService.allowPlayer(playerId)) {
             return Result.error(429, "玩家请求过于频繁，请稍后重试");
+        }
+
+        ChatMessageLog message = new ChatMessageLog()
+                .setPlayerId(request.getPlayerId())
+                .setContent(request.getContent())
+                .setPlatform(request.getPlatform().name());
+        if (request.getCreateTime() != null) {
+            message.setCreateTime(request.getCreateTime());
         }
 
         try {

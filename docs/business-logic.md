@@ -7,7 +7,7 @@
 **入口**：`POST /api/chat/upload`（`ChatMessageController`）
 
 1. 从请求体反序列化为 `ChatMessageLog`。
-2. **限流**（`IngestionRateLimiterService`）：全局限流、按客户端 IP、按 `playerId`；触发返回 HTTP 语义由 `Result` 封装为 `429`。
+2. **限流**（`IngestionRateLimiterService`）：全局限流、按客户端 IP、按 `playerId`。默认使用 Redis Lua 固定窗口计数，多个 `ingest` 实例共享同一组 key；Redis 不可用且 `starshield.rate-limit.fallback-to-local=true` 时降级为本机窗口。触发限流返回 `Result.code=429`，并由全局响应处理同步为 HTTP 429。
 3. 将 `status` 置为 `0`（待处理）。
 4. 将整个对象 **JSON 序列化后** 发送到 RabbitMQ（`chat.direct.exchange` + `chat.message.routing.key`）。
 5. 接口立即返回成功；**此时尚未写 MySQL**，审核在消费者中完成。
@@ -89,14 +89,16 @@
 
 - 从 MySQL 统计总条数、`decision=BLOCK` 数、`decision=REVIEW` 数，计算拦截率。
 - `latest`：最近 100 条按创建时间倒序。
+- WebSocket `/ws/dashboard` 建连后立即推送一次当前快照，随后按 `starshield.dashboard.push-interval-ms` 定时广播（默认 5000ms）。
 
-（如项目内另有 WebSocket 推送，用于实时刷新大屏，见 `DashboardWebSocketHandler` / `DashboardPushService`。）
+实时刷新链路见 `DashboardWebSocketHandler` / `DashboardPushService`。
 
 ## 7. 配置项速查（业务相关）
 
 | 配置前缀 | 含义 |
 |---|---|
-| `starshield.rate-limit.*` | 接入 QPS 上限 |
+| `starshield.rate-limit.*` | 接入 QPS 上限、Redis 限流开关、窗口长度与 key 前缀 |
+| `starshield.dashboard.*` | 大屏 WebSocket 广播周期 |
 | `starshield.archive.es-enabled` | 是否写/查 ES |
 | `starshield.ai.*` | 提供方标识、Prompt 版本、轻量 URL、DeepSeek URL、阈值、`.env` 回读开关等 |
 

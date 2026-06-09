@@ -15,7 +15,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/control")
-@CrossOrigin(origins = "*")
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class ControlPanelController {
 

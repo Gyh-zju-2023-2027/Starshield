@@ -11,6 +11,7 @@ flowchart LR
   GW -->|POST /api/chat/upload| ING[starshield-ingest]
   GW -->|/api/* /ws/*| API[starshield-api]
   ING --> MQ[(RabbitMQ)]
+  ING --> RD[(Redis)]
   MQ --> WRK[starshield-worker]
   WRK --> AI[ai-service :5050]
   WRK --> DB[(MySQL)]
@@ -23,7 +24,7 @@ flowchart LR
 
 | 优化点 | 说明 |
 |--------|------|
-| **接入专用 JVM** | `ingest` 仅做限流 + JSON + MQ 投递，不加载 MyBatis / 消费者 / WebSocket |
+| **接入专用 JVM** | `ingest` 仅做 Redis 分布式限流 + JSON + MQ 投递，不加载 MyBatis / 消费者 / WebSocket |
 | **线程池隔离** | 审核、大屏、HTTP 接入不再共享同一 Tomcat 400 线程 |
 | **容器内网调用** | Worker → `ai-service:5050` 走 Docker bridge，避免 host 回环与端口映射 |
 | **Worker 可横向扩容** | `docker compose up --scale starshield-worker=3` 提升消费吞吐，不拖累接入 P99 |
@@ -80,6 +81,13 @@ cd starshield-frontend && npm run dev
 | `STARSHIELD_AI_PROVIDER` | `lightweight` | worker AI 提供方 |
 | `STARSHIELD_AI_LIGHTWEIGHT_URL` | `http://ai-service:5050/score` | 轻量模型地址 |
 | `STARSHIELD_ES_ENABLED` | `false` | 是否启用 ES 归档 |
+| `STARSHIELD_RATE_LIMIT_GLOBAL_QPS` | `20000` | 全局接入 QPS |
+| `STARSHIELD_RATE_LIMIT_IP_QPS` | `300` | 单 IP 接入 QPS |
+| `STARSHIELD_RATE_LIMIT_PLAYER_QPS` | `30` | 单玩家接入 QPS |
+
+## 接入限流
+
+`starshield-ingest` 依赖 Redis 执行 Lua 原子固定窗口计数，扩容多个 ingest 实例时仍共享全局 / IP / player 三类限流。Redis 短暂不可用时默认降级到本机固定窗口；生产环境如需 fail-closed，可设置 `STARSHIELD_RATE_LIMIT_FALLBACK_TO_LOCAL=false`。
 
 ## 本地仍用单体
 

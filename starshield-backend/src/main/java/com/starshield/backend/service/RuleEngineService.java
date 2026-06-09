@@ -9,9 +9,11 @@ import com.starshield.backend.config.runtime.EnabledOnMode;
 import com.starshield.backend.config.runtime.RuntimeMode;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -20,17 +22,17 @@ import java.util.concurrent.TimeUnit;
  * 引擎 A：Redis 敏感词快速拦截 + 布隆过滤器优化。
  */
 @Service
-@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class RuleEngineService {
 
     private static final String SENSITIVE_WORD_KEY = "starshield:rules:sensitive_words";
-    private static final String BLOOM_FILTER_KEY = "starshield:rules:bloom_filter";
     private static final long CACHE_SECONDS = 10L;
 
     private final StringRedisTemplate stringRedisTemplate;
 
     private volatile long cacheExpireAt = 0L;
     private volatile List<String> cachedWords = List.of();
+    private volatile Set<Integer> cachedWordLengths = Set.of();
     private volatile BloomFilter<String> bloomFilter;
 
     public RuleEngineService(StringRedisTemplate stringRedisTemplate) {
@@ -44,22 +46,21 @@ public class RuleEngineService {
      */
     public FastCheckResult fastCheck(String content) {
         String normalized = normalize(content);
-        
-        // 使用布隆过滤器快速判断是否可能包含敏感词
-        if (bloomFilter != null && !bloomFilter.mightContain(normalized)) {
-            // 布隆过滤器确认不包含敏感词，直接返回PASS
+        List<String> sensitiveWords = loadSensitiveWords();
+
+        if (bloomFilter != null && !mightContainAnySensitiveWord(normalized)) {
             return new FastCheckResult()
                     .setDecision(ModerationDecision.PASS)
                     .setRiskScore(10)
                     .setLabels("normal")
                     .setHitWords("")
-                    .setReason("布隆过滤器快速判断无敏感词");
+                    .setReason("布隆过滤器未发现候选敏感词");
         }
 
-        // 可能包含敏感词，进行精确匹配
         List<String> hitWords = new ArrayList<>();
-        for (String word : loadSensitiveWords()) {
-            if (!word.isBlank() && normalized.contains(word)) {
+        for (String word : sensitiveWords) {
+            String normalizedWord = normalize(word);
+            if (!normalizedWord.isBlank() && normalized.contains(normalizedWord)) {
                 hitWords.add(word);
             }
         }
@@ -90,41 +91,57 @@ public class RuleEngineService {
      * @author AI (under P4 supervision)
      */
     public void replaceSensitiveWords(List<String> words) {
+        List<String> sanitizedWords = sanitizeWords(words);
         stringRedisTemplate.delete(SENSITIVE_WORD_KEY);
-        if (words != null && !words.isEmpty()) {
-            stringRedisTemplate.opsForSet().add(SENSITIVE_WORD_KEY, words.toArray(new String[0]));
-            
-            // 更新布隆过滤器
-            rebuildBloomFilter(words);
+        if (!sanitizedWords.isEmpty()) {
+            stringRedisTemplate.opsForSet().add(SENSITIVE_WORD_KEY, sanitizedWords.toArray(new String[0]));
+            cachedWords = sanitizedWords;
+            rebuildBloomFilter(sanitizedWords);
+            cacheExpireAt = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(CACHE_SECONDS);
         } else {
-            bloomFilter = null; // 清空布隆过滤器
+            cachedWords = List.of();
+            cachedWordLengths = Set.of();
+            bloomFilter = null;
+            cacheExpireAt = 0L;
         }
-        cacheExpireAt = 0L;
     }
 
     private void rebuildBloomFilter(List<String> words) {
         if (words == null || words.isEmpty()) {
+            cachedWordLengths = Set.of();
             bloomFilter = null;
             return;
         }
-        
-        // 创建布隆过滤器，预期元素数量为敏感词数量，误判率为1%
-        int expectedInsertions = words.size();
+
+        LinkedHashSet<String> normalizedWords = new LinkedHashSet<>();
+        Set<Integer> wordLengths = new HashSet<>();
+        for (String word : words) {
+            String normalizedWord = normalize(word);
+            if (!normalizedWord.isBlank()) {
+                normalizedWords.add(normalizedWord);
+                wordLengths.add(normalizedWord.length());
+            }
+        }
+        if (normalizedWords.isEmpty()) {
+            cachedWordLengths = Set.of();
+            bloomFilter = null;
+            return;
+        }
+
+        int expectedInsertions = normalizedWords.size();
         double fpp = 0.01; // 1% 误判率
         
         BloomFilter<String> newBloomFilter = BloomFilter.create(
-            Funnels.stringFunnel(Charset.defaultCharset()),
+            Funnels.stringFunnel(StandardCharsets.UTF_8),
             expectedInsertions,
             fpp
         );
         
-        // 将所有敏感词添加到布隆过滤器
-        for (String word : words) {
-            if (word != null && !word.trim().isEmpty()) {
-                newBloomFilter.put(word.trim());
-            }
+        for (String word : normalizedWords) {
+            newBloomFilter.put(word);
         }
         
+        this.cachedWordLengths = Set.copyOf(wordLengths);
         this.bloomFilter = newBloomFilter;
     }
 
@@ -139,11 +156,42 @@ public class RuleEngineService {
             cachedWords = Arrays.asList("傻逼", "代充", "加V", "点击链接", "色情");
             rebuildBloomFilter(cachedWords); // 重建布隆过滤器
         } else {
-            cachedWords = new ArrayList<>(words);
+            cachedWords = sanitizeWords(new ArrayList<>(words));
             rebuildBloomFilter(cachedWords); // 重建布隆过滤器
         }
         cacheExpireAt = now + TimeUnit.SECONDS.toMillis(CACHE_SECONDS);
         return cachedWords;
+    }
+
+    private boolean mightContainAnySensitiveWord(String normalizedContent) {
+        if (normalizedContent == null || normalizedContent.isBlank() || cachedWordLengths.isEmpty()) {
+            return false;
+        }
+        for (Integer wordLength : cachedWordLengths) {
+            if (wordLength == null || wordLength <= 0 || wordLength > normalizedContent.length()) {
+                continue;
+            }
+            int lastStart = normalizedContent.length() - wordLength;
+            for (int start = 0; start <= lastStart; start++) {
+                if (bloomFilter.mightContain(normalizedContent.substring(start, start + wordLength))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private List<String> sanitizeWords(List<String> words) {
+        if (words == null || words.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> sanitized = new LinkedHashSet<>();
+        for (String word : words) {
+            if (word != null && !word.trim().isEmpty()) {
+                sanitized.add(word.trim());
+            }
+        }
+        return new ArrayList<>(sanitized);
     }
 
     private String normalize(String content) {

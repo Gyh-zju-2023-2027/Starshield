@@ -7,7 +7,6 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
       - org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchDataAutoConfiguration
       - org.springframework.boot.autoconfigure.data.elasticsearch.ElasticsearchRepositoriesAutoConfiguration
       - com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration
@@ -31,6 +30,4 @@ server:
 management:
   health:
     db:
-      enabled: false
-    redis:
       enabled: false

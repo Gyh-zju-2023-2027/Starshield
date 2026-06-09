@@ -28,7 +28,7 @@ import java.util.function.Supplier;
  * AI 大模型分析服务。
  */
 @Service
-@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER})
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.WORKER, RuntimeMode.API})
 public class AiAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
@@ -74,13 +74,24 @@ public class AiAnalysisService {
                       ObjectMapper objectMapper,
                       ControlPanelService controlPanelService,
                       Supplier<String> apiKeySupplier) {
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout(Duration.ofSeconds(3));
-        requestFactory.setReadTimeout(Duration.ofSeconds(3));
-        this.restClient = restClientBuilder.requestFactory(requestFactory).build();
+        this(buildRestClient(restClientBuilder), objectMapper, controlPanelService, apiKeySupplier);
+    }
+
+    AiAnalysisService(RestClient restClient,
+                      ObjectMapper objectMapper,
+                      ControlPanelService controlPanelService,
+                      Supplier<String> apiKeySupplier) {
+        this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.controlPanelService = controlPanelService;
         this.apiKeySupplier = apiKeySupplier;
+    }
+
+    private static RestClient buildRestClient(RestClient.Builder restClientBuilder) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(3));
+        requestFactory.setReadTimeout(Duration.ofSeconds(3));
+        return restClientBuilder.requestFactory(requestFactory).build();
     }
 
     /**

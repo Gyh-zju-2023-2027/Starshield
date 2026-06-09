@@ -22,7 +22,7 @@ cd starshield-backend
 STARSHIELD_AI_LIGHTWEIGHT_URL=http://127.0.0.1:5050/score mvn spring-boot:run
 ```
 
-> ⚠️ **重要**：请先确认 `RuleEngineService` 的 BloomFilter 已修复（参见 `docs/e2e-redis-model-report.md` BUG#2）。如果布隆过滤器仍然反向使用，引擎 A 大部分时间会漏过敏感词，但不影响本次脚本跑通——只是引擎 A 召回会偏低。
+> ✅ **规则引擎说明**：`RuleEngineService` 的 BloomFilter 漏审问题已在 2026-06-08 修复；导入真实评论后，引擎 A 会先做安全候选排除，再执行敏感词精确匹配。
 
 可选：先把敏感词写进 Redis（不写也有内置 5 个默认词）：
 

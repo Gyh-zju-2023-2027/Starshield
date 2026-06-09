@@ -33,6 +33,8 @@ from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
 import requests
 
+from bili_live_realtime import BiliLiveDanmakuClient
+
 CST = timezone(timedelta(hours=8))
 
 LOGGER = logging.getLogger("bilichat_ingest")
@@ -236,6 +238,20 @@ class PostStats:
     success: int = 0
     rate_limited: int = 0
     failed: int = 0
+
+
+def build_player_id(record: Dict) -> str:
+    """按记录字段构造 playerId，兼容视频评论 / 直播弹幕 / 外部数据集。"""
+    if record.get("player_id"):
+        return str(record["player_id"])[:64]
+    mid = record.get("mid")
+    uid = record.get("uid")
+    rpid = record.get("rpid", "x")
+    if mid is not None:
+        return f"BILI_{mid}_{rpid}"[:64]
+    if uid is not None:
+        return f"BILI_{uid}_{rpid}"[:64]
+    return f"BILI_anon_{rpid}"[:64]
 
 
 def fmt_create_time(ctime: Optional[int]) -> Optional[str]:
@@ -502,6 +518,121 @@ def fetch_live_danmaku(
     return records
 
 
+def crawl_live_realtime(
+    room_ids: List[int],
+    *,
+    out_jsonl: Path,
+    cookie: Optional[str],
+    target_count: int,
+    base_url: str,
+    rps: float,
+    request_timeout: float,
+    max_retries: int,
+    platform: str,
+    task_id: Optional[str] = None,
+) -> int:
+    """WebSocket 实时监听弹幕 → 落盘 + 即时推送。返回总条数。"""
+    out_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    bucket = TokenBucket(rate_per_sec=rps, capacity=max(rps, 1.0))
+    push_sess = requests.Session()
+    push_sess.trust_env = False
+    total = 0
+    seen_rpid: set[str] = set()
+    stop_flag = threading.Event()
+    state_lock = threading.Lock()
+
+    if task_id:
+        print(json.dumps({"event": "fetch_start", "task_id": task_id, "fetched": 0}, ensure_ascii=False), flush=True)
+
+    def on_danmaku(record: Dict) -> None:
+        nonlocal total
+        if stop_flag.is_set():
+            return
+        text = (record.get("text") or "").strip()
+        rpid = str(record.get("rpid") or "")
+        if not text:
+            return
+        with state_lock:
+            if stop_flag.is_set() or total >= target_count:
+                return
+            dedupe_key = rpid or text
+            if dedupe_key in seen_rpid:
+                return
+            seen_rpid.add(dedupe_key)
+            with out_jsonl.open("a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+            total += 1
+            current_total = total
+
+        payload = {
+            "playerId": build_player_id(record),
+            "content": text,
+            "platform": platform,
+        }
+        create_time = fmt_create_time(record.get("ctime"))
+        if create_time:
+            payload["createTime"] = create_time
+        for attempt in range(max_retries + 1):
+            bucket.acquire()
+            ok, msg = post_chat(push_sess, base_url, payload, timeout=request_timeout)
+            if ok:
+                break
+            if msg == "429" or msg.startswith("http_5"):
+                time.sleep(min(0.5 * (2 ** attempt), 5.0))
+                continue
+            LOGGER.warning("[LiveRealtime] 推送失败: %s", msg)
+            break
+
+        if task_id and current_total % 10 == 0:
+            print(json.dumps({
+                "event": "progress",
+                "task_id": task_id,
+                "fetched": current_total,
+                "pushed": current_total,
+            }, ensure_ascii=False), flush=True)
+        if current_total >= target_count:
+            stop_flag.set()
+
+    with out_jsonl.open("w", encoding="utf-8"):
+        pass
+
+    clients: List[BiliLiveDanmakuClient] = []
+    threads: List[threading.Thread] = []
+    for room_id in room_ids:
+        if stop_flag.is_set():
+            break
+        LOGGER.info("[LiveRealtime] 连接直播间 room_id=%s", room_id)
+        client = BiliLiveDanmakuClient(room_id, cookie=cookie, on_danmaku=on_danmaku)
+        clients.append(client)
+        ws_thread = threading.Thread(target=client.start, daemon=True)
+        threads.append(ws_thread)
+        ws_thread.start()
+
+    try:
+        while not stop_flag.is_set() and total < target_count:
+            if not any(t.is_alive() for t in threads):
+                break
+            time.sleep(0.5)
+    finally:
+        stop_flag.set()
+        for client in clients:
+            client.stop()
+        for t in threads:
+            t.join(timeout=5)
+
+    LOGGER.info("[LiveRealtime] 完成 total=%s file=%s", total, out_jsonl)
+    if task_id:
+        print(json.dumps({"event": "fetch_done", "task_id": task_id, "fetched": total}, ensure_ascii=False), flush=True)
+        print(json.dumps({"event": "finished", "task_id": task_id, "pushed": total}, ensure_ascii=False), flush=True)
+        if total == 0 and room_ids:
+            print(json.dumps({
+                "event": "error",
+                "task_id": task_id,
+                "message": "未收到弹幕，请确认直播间正在直播且房间号有效",
+            }, ensure_ascii=False), flush=True)
+    return total
+
+
 def crawl_live_to_local(
     room_ids: List[int],
     *,
@@ -510,7 +641,7 @@ def crawl_live_to_local(
     target_count: int,
     task_id: Optional[str] = None,
 ) -> int:
-    """拉直播间弹幕 → 写入 JSONL。返回总条数。
+    """拉直播间历史快照弹幕 → 写入 JSONL（非实时，仅作 fallback）。
 
     @author AI
     """
@@ -591,7 +722,7 @@ def push_to_backend(
         if not text:
             return False, "empty"
         payload = {
-            "playerId": f"BILI_{record.get('mid', 'anon')}_{record.get('rpid', 'x')}",
+            "playerId": build_player_id(record),
             "content": text,
             "platform": platform,
         }
@@ -725,6 +856,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="直播间房间号或 URL（可多次指定，如 --live-room-id 12345 --live-room-id https://live.bilibili.com/67890）",
     )
+    p.add_argument(
+        "--live-mode",
+        choices=["realtime", "history"],
+        default="realtime",
+        help="直播模式：realtime=WebSocket 实时弹幕（默认） history=gethistory 历史快照",
+    )
     p.add_argument("--target-count", type=int, default=10000, help="累计抓取多少条评论后停止（默认 10000）")
     p.add_argument("--ps", type=int, default=20, help="B 站每页条数（2024 起 /x/v2/reply 上限收紧到 20）")
     p.add_argument("--sort", type=int, default=3, help="新接口 mode：2=按时间, 3=按热度（默认 3）")
@@ -769,11 +906,27 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def resolve_cookie(args: argparse.Namespace) -> Optional[str]:
+    """CLI --cookie 优先，其次环境变量 BILIBILI_COOKIE（控制台任务注入）。"""
+    raw = args.cookie or os.environ.get("BILIBILI_COOKIE")
+    if raw and str(raw).strip():
+        return str(raw).strip()
+    return None
+
+
 def main() -> None:
     args = parse_args()
     setup_logging(args.verbose, args.log_file)
 
     task_id = args.from_task
+    cookie = resolve_cookie(args)
+    if cookie:
+        LOGGER.info("[Main] 已加载 B 站 Cookie（长度 %s）", len(cookie))
+    elif args.type in ("video", "live") and not args.skip_fetch:
+        LOGGER.warning(
+            "[Main] 未提供 Cookie，访客模式每个视频可能仅能抓取少量精选评论；"
+            "建议在前端填写或通过 --cookie / BILIBILI_COOKIE 传入 SESSDATA"
+        )
 
     if args.dry_run:
         LOGGER.info("[Main] dry-run 模式，仅打印参数")
@@ -785,11 +938,33 @@ def main() -> None:
     if not args.skip_fetch:
         if args.type == "live":
             room_ids = load_live_room_ids(args.live_room_id)
-            LOGGER.info("[Main] 直播间列表共 %s 个，目标 %s 条", len(room_ids), args.target_count)
+            LOGGER.info(
+                "[Main] 直播间列表共 %s 个，模式=%s，目标 %s 条",
+                len(room_ids),
+                args.live_mode,
+                args.target_count,
+            )
+            if args.live_mode == "realtime":
+                platform = "BILIBILI_LIVE"
+                crawl_live_realtime(
+                    room_ids,
+                    out_jsonl=out_path,
+                    cookie=cookie,
+                    target_count=args.target_count,
+                    base_url=args.base_url,
+                    rps=args.rps,
+                    request_timeout=args.request_timeout,
+                    max_retries=args.max_retries,
+                    platform=platform,
+                    task_id=task_id,
+                )
+                if not args.skip_push:
+                    LOGGER.info("[Main] 实时模式已在监听中完成推送，跳过二次 push")
+                return
             crawl_live_to_local(
                 room_ids,
                 out_jsonl=out_path,
-                cookie=args.cookie,
+                cookie=cookie,
                 target_count=args.target_count,
                 task_id=task_id,
             )
@@ -799,7 +974,7 @@ def main() -> None:
             crawl_to_local(
                 bvids,
                 out_jsonl=out_path,
-                cookie=args.cookie,
+                cookie=cookie,
                 target_count=args.target_count,
                 ps=args.ps,
                 sort=args.sort,

@@ -4,7 +4,6 @@ import com.starshield.backend.common.Result;
 import com.starshield.backend.config.runtime.EnabledOnMode;
 import com.starshield.backend.config.runtime.RuntimeMode;
 import com.starshield.backend.service.DashboardControllerSupport;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,7 +15,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/dashboard")
-@CrossOrigin(origins = "*")
 @EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class DashboardController {
 

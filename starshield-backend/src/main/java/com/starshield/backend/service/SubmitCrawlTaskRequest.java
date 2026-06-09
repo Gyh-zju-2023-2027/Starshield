@@ -19,4 +19,8 @@ public class SubmitCrawlTaskRequest {
     @Min(1)
     @Max(300)
     private Integer rps;
+
+    /** 可选：B 站 Cookie（含 SESSDATA），仅用于本次任务，不落库 */
+    @Size(max = 8192)
+    private String cookie;
 }

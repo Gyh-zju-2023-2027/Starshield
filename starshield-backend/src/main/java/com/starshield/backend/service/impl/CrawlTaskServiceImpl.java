@@ -7,6 +7,8 @@ import com.starshield.backend.entity.CrawlTask;
 import com.starshield.backend.mapper.CrawlTaskMapper;
 import com.starshield.backend.service.CrawlTaskService;
 import com.starshield.backend.service.SubmitCrawlTaskRequest;
+import com.starshield.backend.config.runtime.EnabledOnMode;
+import com.starshield.backend.config.runtime.RuntimeMode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ import java.util.concurrent.Executors;
 
 @Slf4j
 @Service
+@EnabledOnMode({RuntimeMode.MONOLITH, RuntimeMode.API})
 public class CrawlTaskServiceImpl implements CrawlTaskService {
 
     @Autowired
@@ -47,7 +50,8 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
         crawlTaskMapper.insert(task);
 
         int rps = req.getRps() != null ? req.getRps() : 20;
-        executor.submit(() -> runPython(task.getId(), rps));
+        String cookie = req.getCookie();
+        executor.submit(() -> runPython(task.getId(), rps, cookie));
         return task.getId();
     }
 
@@ -98,7 +102,7 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
                 .set(CrawlTask::getFinishTime, LocalDateTime.now()));
     }
 
-    private void runPython(Long taskId, int rps) {
+    private void runPython(Long taskId, int rps, String cookie) {
         CrawlTask task = crawlTaskMapper.selectById(taskId);
         if (task == null) {
             log.error("Task not found: {}", taskId);
@@ -113,41 +117,53 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
 
             List<String> targets = objectMapper.readValue(task.getTargetsJson(), List.class);
 
-            // ✅ 计算项目根目录（Starshield/）
-            String projectRoot = new java.io.File(
-                System.getProperty("user.dir")
-            ).getParent();
-
-            String scriptPath = projectRoot + "/bilichat-ingest/ingest_comments.py";
-
+            String projectRoot = resolveProjectRoot();
+            String scriptPath;
             List<String> cmd = new ArrayList<>();
             cmd.add("python3");
-            cmd.add(scriptPath);
-            cmd.add("--from-task");
-            cmd.add(taskId.toString());
-            cmd.add("--target-count");
-            cmd.add(task.getTargetCount().toString());
-            cmd.add("--rps");
-            cmd.add(String.valueOf(rps));
 
-            if ("live".equals(task.getType())) {
-                cmd.add("--type");
-                cmd.add("live");
-                for (String target : targets) {
-                    cmd.add("--live-room-id");
-                    cmd.add(target);
-                }
+            if ("weibo".equals(task.getType())) {
+                scriptPath = projectRoot + "/bilichat-ingest/ingest_identityv_weibo.py";
+                cmd.add(scriptPath);
+                cmd.add("--from-task");
+                cmd.add(taskId.toString());
+                cmd.add("--target-count");
+                cmd.add(task.getTargetCount().toString());
+                cmd.add("--rps");
+                cmd.add(String.valueOf(rps));
             } else {
-                for (String target : targets) {
-                    cmd.add("--bvid");
-                    cmd.add(target);
+                scriptPath = projectRoot + "/bilichat-ingest/ingest_comments.py";
+                cmd.add(scriptPath);
+                cmd.add("--from-task");
+                cmd.add(taskId.toString());
+                cmd.add("--target-count");
+                cmd.add(task.getTargetCount().toString());
+                cmd.add("--rps");
+                cmd.add(String.valueOf(rps));
+
+                if ("live".equals(task.getType())) {
+                    cmd.add("--type");
+                    cmd.add("live");
+                    cmd.add("--live-mode");
+                    cmd.add("realtime");
+                    for (String target : targets) {
+                        cmd.add("--live-room-id");
+                        cmd.add(target);
+                    }
+                } else {
+                    for (String target : targets) {
+                        cmd.add("--bvid");
+                        cmd.add(target);
+                    }
                 }
             }
 
             ProcessBuilder pb = new ProcessBuilder(cmd);
-            // ✅ 关键：设置工作目录为项目根目录
             pb.directory(new java.io.File(projectRoot));
             pb.redirectErrorStream(true);
+            if (cookie != null && !cookie.isBlank()) {
+                pb.environment().put("BILIBILI_COOKIE", cookie.trim());
+            }
 
             process = pb.start();
             runningProcesses.put(taskId, process);
@@ -227,5 +243,22 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
         } catch (Exception e) {
             return "[]";
         }
+    }
+
+    /** 兼容从 starshield-backend/ 或项目根目录启动后端。 */
+    private String resolveProjectRoot() {
+        java.io.File cwd = new java.io.File(System.getProperty("user.dir"));
+        java.io.File ingestInCwd = new java.io.File(cwd, "bilichat-ingest/ingest_comments.py");
+        if (ingestInCwd.exists()) {
+            return cwd.getAbsolutePath();
+        }
+        java.io.File parent = cwd.getParentFile();
+        if (parent != null) {
+            java.io.File ingestInParent = new java.io.File(parent, "bilichat-ingest/ingest_comments.py");
+            if (ingestInParent.exists()) {
+                return parent.getAbsolutePath();
+            }
+        }
+        return cwd.getAbsolutePath();
     }
 }

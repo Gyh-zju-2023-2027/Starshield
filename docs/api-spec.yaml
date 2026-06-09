@@ -603,7 +603,7 @@ components:
           maxLength: 10000
         platform:
           type: string
-          enum: [GAME_INNER, BILIBILI, WEIBO, DOUYIN, OTHER]
+          enum: [GAME_INNER, BILIBILI, BILIBILI_LIVE, WEIBO, DOUYIN, OTHER]
         status:
           type: integer
           enum: [0, 1, 2]

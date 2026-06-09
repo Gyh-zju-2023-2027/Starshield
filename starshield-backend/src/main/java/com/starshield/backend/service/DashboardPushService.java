@@ -1,7 +1,5 @@
 package com.starshield.backend.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.starshield.backend.common.Result;
 import com.starshield.backend.config.DashboardWebSocketHandler;
 import com.starshield.backend.config.runtime.EnabledOnMode;
 import com.starshield.backend.config.runtime.RuntimeMode;
@@ -16,15 +14,12 @@ import org.springframework.stereotype.Service;
 public class DashboardPushService {
 
     private final DashboardWebSocketHandler webSocketHandler;
-    private final DashboardControllerSupport dashboardControllerSupport;
-    private final ObjectMapper objectMapper;
+    private final DashboardPayloadService dashboardPayloadService;
 
     public DashboardPushService(DashboardWebSocketHandler webSocketHandler,
-                                DashboardControllerSupport dashboardControllerSupport,
-                                ObjectMapper objectMapper) {
+                                DashboardPayloadService dashboardPayloadService) {
         this.webSocketHandler = webSocketHandler;
-        this.dashboardControllerSupport = dashboardControllerSupport;
-        this.objectMapper = objectMapper;
+        this.dashboardPayloadService = dashboardPayloadService;
     }
 
     /**
@@ -32,11 +27,10 @@ public class DashboardPushService {
      *
      * @author AI (under P9 supervision)
      */
-    @Scheduled(fixedDelay = 5000)
+    @Scheduled(fixedDelayString = "${starshield.dashboard.push-interval-ms:5000}")
     public void pushMetrics() {
         try {
-            Result<?> result = dashboardControllerSupport.metrics();
-            webSocketHandler.broadcast(objectMapper.writeValueAsString(result));
+            webSocketHandler.broadcast(dashboardPayloadService.metricsPayload());
         } catch (Exception ignored) {
         }
     }
