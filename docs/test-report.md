@@ -33,6 +33,7 @@
 - ✅ **规则引擎 BloomFilter 漏审修复**：按敏感词长度扫描候选子串后再精确匹配，测试不再接受假阴性。
 - ✅ **鉴权加固已落地**：`/api/admin/**`、`/api/crawl/**`、控制面写操作、`POST /api/archive/reindex` 需管理令牌。
 - ✅ **接入层校验与 HTTP 语义**：上传请求使用 `@Valid`，`Result.code` 会同步映射为 HTTP 400 / 409 / 429 等状态码。
+- ✅ **XSS 展示层修复**：Dashboard / BanAnalytics / AdminReview 等用户内容使用 Vue 文本插值或转义工具；CrawlConsole 任务详情弹窗已移除 `dangerouslyUseHTMLString`，改用 VNode 文本渲染。
 - ✅ **接入限流分布式化**：`IngestionRateLimiterService` 已从 JVM 内存窗口改为 Redis Lua 滑动窗口，多个 ingest 实例共享全局 / IP / player 计数；也可切换 `token-bucket`，Redis 故障时默认本地令牌桶降级。
 - ✅ **默认测试可本地运行**：`mvn test` 默认不连接 Redis / RabbitMQ / MySQL / DeepSeek；真实集成测试需 `STARSHIELD_RUN_INTEGRATION_TESTS=true` 显式开启。
 - ⚠️ **仍需重跑 secure-test**：下方 2026-06-02 安全 FAIL/WARN 表保留为历史基线，需在最新代码与目标部署形态下重新生成正式结论。
@@ -286,7 +287,7 @@ cd secure-test
 |----|------|------|------|----------|
 | SEC-INJ-01 | 归档检索 SQL 注入 | CRITICAL | ✅ PASS | 6 组注入参数均正常，无 SQL 错误泄露 |
 | SEC-INJ-02 | 发言内容 SQL 片段 | MEDIUM | ✅ PASS | 4 条 payload 无 500 |
-| SEC-INJ-03 | XSS Payload 上传 | MEDIUM | ⚠️ WARN | 服务端接受 payload；展示层需 HTML 转义 |
+| SEC-INJ-03 | XSS Payload 上传 | MEDIUM | ✅ FIXED | 展示层已转义；CrawlConsole 任务详情改为 VNode 文本渲染，待重跑 secure-test 确认为 PASS |
 | SEC-INJ-04 | 超大 Payload（50 KB） | MEDIUM | ✅ PASS | HTTP 200 正常入队，无 500 |
 | SEC-INJ-05 | 畸形 JSON | LOW | ✅ PASS | empty/not_json/array → 400；框架拦截有效 |
 | SEC-INJ-06 | 缺字段上传 | MEDIUM | ⚠️ WARN | 空 body / 缺字段仍返回 200，脏数据可入 MQ |
@@ -339,7 +340,7 @@ cd secure-test
 | P1 | 接入层字段校验 | `ChatMessageUploadRequest` 增加 `@Valid`，缺字段返回 400 |
 | P1 | CORS 白名单 | 替换 `@CrossOrigin(origins="*")` 为明确域名列表 |
 | P2 | XFF 信任链 | 网关剥离客户端伪造头，仅信任一层代理注入的 IP |
-| P2 | XSS 输出编码 | Dashboard / Archive 前端渲染层统一转义 |
+| P2 | XSS 输出编码 | ✅ 已完成：Dashboard / Archive / CrawlConsole 前端渲染层已统一文本渲染或转义 |
 | P3 | reindex 异步化 + 鉴权 | 避免未授权长任务阻塞 HTTP 线程 |
 
 ---

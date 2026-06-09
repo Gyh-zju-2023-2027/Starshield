@@ -264,7 +264,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, h, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fetchCrawlTasks, stopCrawlTask, submitCrawlTask } from '../api/crawl'
 import MetricCard from '../components/ui/MetricCard.vue'
@@ -439,27 +439,30 @@ const fetchTasks = async () => {
 // 查看任务详情
 const viewTask = (task) => {
   ElMessageBox.alert(
-    `
-    <div class="space-y-2">
-      <p><strong>任务 ID：</strong>${task.id}</p>
-      <p><strong>类型：</strong>${taskTypeText(task.type)}</p>
-      <p><strong>目标数量：</strong>${task.targetCount} 条</p>
-      <p><strong>已抓取：</strong>${task.fetchedCount} 条</p>
-      <p><strong>已推送：</strong>${task.pushedCount} 条</p>
-      <p><strong>状态：</strong>${statusText(task.status)}</p>
-      <p><strong>创建时间：</strong>${formatTime(task.createTime)}</p>
-      ${task.finishTime ? `<p><strong>完成时间：</strong>${formatTime(task.finishTime)}</p>` : ''}
-      ${task.errorMsg ? `<p class="text-red-400"><strong>错误信息：</strong>${task.errorMsg}</p>` : ''}
-    </div>
-    `,
+    h('div', { class: 'space-y-2' }, [
+      detailRow('任务 ID', task.id),
+      detailRow('类型', taskTypeText(task.type)),
+      detailRow('目标数量', `${task.targetCount} 条`),
+      detailRow('已抓取', `${task.fetchedCount} 条`),
+      detailRow('已推送', `${task.pushedCount} 条`),
+      detailRow('状态', statusText(task.status)),
+      detailRow('创建时间', formatTime(task.createTime)),
+      task.finishTime ? detailRow('完成时间', formatTime(task.finishTime)) : null,
+      task.errorMsg ? detailRow('错误信息', task.errorMsg, 'text-red-400') : null
+    ].filter(Boolean)),
     '任务详情',
     {
-      dangerouslyUseHTMLString: true,
       confirmButtonText: '关闭',
       customClass: '!bg-slate-900 !border !border-white/10'
     }
   )
 }
+
+const detailRow = (label, value, className = '') =>
+  h('p', { class: className }, [
+    h('strong', `${label}：`),
+    String(value ?? '—')
+  ])
 
 // 终止任务
 const stopTask = async (id) => {
