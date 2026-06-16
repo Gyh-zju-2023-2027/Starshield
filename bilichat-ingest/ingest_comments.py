@@ -529,7 +529,9 @@ def crawl_live_realtime(
     request_timeout: float,
     max_retries: int,
     platform: str,
+    idle_timeout: float,
     task_id: Optional[str] = None,
+    emit_zero_error: bool = True,
 ) -> int:
     """WebSocket 实时监听弹幕 → 落盘 + 即时推送。返回总条数。"""
     out_jsonl.parent.mkdir(parents=True, exist_ok=True)
@@ -540,12 +542,14 @@ def crawl_live_realtime(
     seen_rpid: set[str] = set()
     stop_flag = threading.Event()
     state_lock = threading.Lock()
+    last_activity = time.monotonic()
+    client_errors: List[str] = []
 
     if task_id:
         print(json.dumps({"event": "fetch_start", "task_id": task_id, "fetched": 0}, ensure_ascii=False), flush=True)
 
     def on_danmaku(record: Dict) -> None:
-        nonlocal total
+        nonlocal last_activity, total
         if stop_flag.is_set():
             return
         text = (record.get("text") or "").strip()
@@ -562,6 +566,7 @@ def crawl_live_realtime(
             with out_jsonl.open("a", encoding="utf-8") as fp:
                 fp.write(json.dumps(record, ensure_ascii=False) + "\n")
             total += 1
+            last_activity = time.monotonic()
             current_total = total
 
         payload = {
@@ -593,6 +598,10 @@ def crawl_live_realtime(
         if current_total >= target_count:
             stop_flag.set()
 
+    def on_client_error(room_id: int, message: str) -> None:
+        with state_lock:
+            client_errors.append(f"room_id={room_id}: {message}")
+
     with out_jsonl.open("w", encoding="utf-8"):
         pass
 
@@ -602,15 +611,31 @@ def crawl_live_realtime(
         if stop_flag.is_set():
             break
         LOGGER.info("[LiveRealtime] 连接直播间 room_id=%s", room_id)
-        client = BiliLiveDanmakuClient(room_id, cookie=cookie, on_danmaku=on_danmaku)
+        client = BiliLiveDanmakuClient(
+            room_id,
+            cookie=cookie,
+            on_danmaku=on_danmaku,
+            on_error=lambda msg, rid=room_id: on_client_error(rid, msg),
+        )
         clients.append(client)
-        ws_thread = threading.Thread(target=client.start, daemon=True)
+
+        def run_client(c: BiliLiveDanmakuClient, rid: int) -> None:
+            try:
+                c.start()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[LiveRealtime] room_id=%s 监听失败: %s", rid, exc)
+                on_client_error(rid, str(exc))
+
+        ws_thread = threading.Thread(target=run_client, args=(client, room_id), daemon=True)
         threads.append(ws_thread)
         ws_thread.start()
 
     try:
         while not stop_flag.is_set() and total < target_count:
             if not any(t.is_alive() for t in threads):
+                break
+            if idle_timeout > 0 and time.monotonic() - last_activity >= idle_timeout:
+                LOGGER.info("[LiveRealtime] %ss 内未收到新弹幕，停止实时监听", idle_timeout)
                 break
             time.sleep(0.5)
     finally:
@@ -624,11 +649,12 @@ def crawl_live_realtime(
     if task_id:
         print(json.dumps({"event": "fetch_done", "task_id": task_id, "fetched": total}, ensure_ascii=False), flush=True)
         print(json.dumps({"event": "finished", "task_id": task_id, "pushed": total}, ensure_ascii=False), flush=True)
-        if total == 0 and room_ids:
+        if total == 0 and room_ids and emit_zero_error:
+            hint = "；".join(client_errors[:3]) if client_errors else "请确认直播间正在直播且房间号有效"
             print(json.dumps({
                 "event": "error",
                 "task_id": task_id,
-                "message": "未收到弹幕，请确认直播间正在直播且房间号有效",
+                "message": f"未收到弹幕，{hint}",
             }, ensure_ascii=False), flush=True)
     return total
 
@@ -862,6 +888,12 @@ def parse_args() -> argparse.Namespace:
         default="realtime",
         help="直播模式：realtime=WebSocket 实时弹幕（默认） history=gethistory 历史快照",
     )
+    p.add_argument(
+        "--live-idle-timeout",
+        type=float,
+        default=60.0,
+        help="实时直播模式连续多少秒未收到弹幕后停止监听；0 表示一直等待（默认 60）",
+    )
     p.add_argument("--target-count", type=int, default=10000, help="累计抓取多少条评论后停止（默认 10000）")
     p.add_argument("--ps", type=int, default=20, help="B 站每页条数（2024 起 /x/v2/reply 上限收紧到 20）")
     p.add_argument("--sort", type=int, default=3, help="新接口 mode：2=按时间, 3=按热度（默认 3）")
@@ -946,7 +978,7 @@ def main() -> None:
             )
             if args.live_mode == "realtime":
                 platform = "BILIBILI_LIVE"
-                crawl_live_realtime(
+                live_total = crawl_live_realtime(
                     room_ids,
                     out_jsonl=out_path,
                     cookie=cookie,
@@ -956,8 +988,32 @@ def main() -> None:
                     request_timeout=args.request_timeout,
                     max_retries=args.max_retries,
                     platform=platform,
+                    idle_timeout=args.live_idle_timeout,
                     task_id=task_id,
+                    emit_zero_error=False,
                 )
+                if live_total == 0:
+                    LOGGER.info("[Main] 实时监听未收到弹幕，回退到 gethistory 历史快照接口")
+                    crawl_live_to_local(
+                        room_ids,
+                        out_jsonl=out_path,
+                        cookie=cookie,
+                        target_count=args.target_count,
+                        task_id=task_id,
+                    )
+                    if not args.skip_push:
+                        push_to_backend(
+                            out_path,
+                            base_url=args.base_url,
+                            rps=args.rps,
+                            workers=args.workers,
+                            request_timeout=args.request_timeout,
+                            max_retries=args.max_retries,
+                            platform=platform,
+                            limit=args.push_limit,
+                            task_id=task_id,
+                        )
+                    return
                 if not args.skip_push:
                     LOGGER.info("[Main] 实时模式已在监听中完成推送，跳过二次 push")
                 return

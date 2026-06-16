@@ -111,6 +111,9 @@ services:
       STARSHIELD_AI_PROVIDER: ${STARSHIELD_AI_PROVIDER:-deepseek}
       STARSHIELD_ADMIN_API_KEY: ${STARSHIELD_ADMIN_API_KEY:-starshield-dev-admin-key}
       BILIBILI_COOKIE: ${BILIBILI_COOKIE:-}
+      STSHIELD_BASE: http://gateway:8080/api
+    volumes:
+      - ./bilichat-ingest:/app/bilichat-ingest:ro
     depends_on:
       mysql:
         condition: service_healthy

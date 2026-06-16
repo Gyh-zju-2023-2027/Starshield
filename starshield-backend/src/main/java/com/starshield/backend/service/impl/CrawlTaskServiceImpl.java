@@ -131,6 +131,10 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
                 cmd.add(task.getTargetCount().toString());
                 cmd.add("--rps");
                 cmd.add(String.valueOf(rps));
+                cmd.add("--dataset-file");
+                cmd.add("/tmp/starshield-crawl/identityv-weibo-raw.jsonl");
+                cmd.add("--out-jsonl");
+                cmd.add("/tmp/starshield-crawl/task-" + taskId + ".jsonl");
             } else {
                 scriptPath = projectRoot + "/bilichat-ingest/ingest_comments.py";
                 cmd.add(scriptPath);
@@ -140,6 +144,8 @@ public class CrawlTaskServiceImpl implements CrawlTaskService {
                 cmd.add(task.getTargetCount().toString());
                 cmd.add("--rps");
                 cmd.add(String.valueOf(rps));
+                cmd.add("--out-jsonl");
+                cmd.add("/tmp/starshield-crawl/task-" + taskId + ".jsonl");
 
                 if ("live".equals(task.getType())) {
                     cmd.add("--type");

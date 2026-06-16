@@ -10,11 +10,16 @@ import logging
 import struct
 import threading
 import time
+import zlib
 from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
-import brotli
 import requests
 import websocket
+
+try:
+    import brotli
+except ImportError:  # pragma: no cover - depends on local runtime packages
+    brotli = None
 
 LOGGER = logging.getLogger("bilichat_ingest.live_ws")
 
@@ -49,11 +54,38 @@ def _iter_frames(data: bytes) -> Iterator[Tuple[int, bytes]]:
         body = data[offset + header_len : offset + pack_len]
         if proto_ver == 2:
             try:
-                body = brotli.decompress(body)
-            except brotli.error:
-                LOGGER.debug("[LiveWS] brotli 解压失败，跳过该包")
-                offset += pack_len
-                continue
+                body = zlib.decompress(body)
+            except zlib.error:
+                # 部分边缘节点会返回与标记不一致的压缩格式，兼容 brotli。
+                if brotli is None:
+                    LOGGER.debug("[LiveWS] zlib/brotli 解压失败，跳过该包")
+                    offset += pack_len
+                    continue
+                try:
+                    body = brotli.decompress(body)
+                except brotli.error:
+                    LOGGER.debug("[LiveWS] zlib/brotli 解压失败，跳过该包")
+                    offset += pack_len
+                    continue
+            yield from _iter_frames(body)
+        elif proto_ver == 3:
+            if brotli is not None:
+                try:
+                    body = brotli.decompress(body)
+                except brotli.error:
+                    try:
+                        body = zlib.decompress(body)
+                    except zlib.error:
+                        LOGGER.debug("[LiveWS] brotli/zlib 解压失败，跳过该包")
+                        offset += pack_len
+                        continue
+            else:
+                try:
+                    body = zlib.decompress(body)
+                except zlib.error:
+                    LOGGER.debug("[LiveWS] brotli/zlib 解压失败，跳过该包")
+                    offset += pack_len
+                    continue
             yield from _iter_frames(body)
         elif proto_ver in (0, 1):
             yield operation, body
@@ -149,7 +181,7 @@ class BiliLiveDanmakuClient:
         auth = {
             "uid": 0,
             "roomid": self.real_room_id,
-            "protover": 2,
+            "protover": 3 if brotli is not None else 2,
             "platform": "web",
             "type": 2,
             "key": self.token or "",
@@ -233,7 +265,12 @@ class BiliLiveDanmakuClient:
             on_message=self._handle_message,
             on_error=self._on_error,
             on_close=self._on_close,
-            header=[f"User-Agent: {DEFAULT_UA}"],
+            header=[
+                f"User-Agent: {DEFAULT_UA}",
+                f"Referer: https://live.bilibili.com/{self.input_room_id}",
+                "Origin: https://live.bilibili.com",
+                *([f"Cookie: {self.cookie.strip()}"] if self.cookie else []),
+            ],
         )
         LOGGER.info("[LiveWS] 开始监听 room=%s → %s", self.real_room_id, url)
         self._ws.run_forever(ping_interval=0)
